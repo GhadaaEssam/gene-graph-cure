@@ -15,10 +15,10 @@ class pgb():
 
 
         self.signalObj.emit(int(n_value*self.scale + self.min_value))
-        
-
 
 def make_data_geo(data_geo, label_geo,k,i,seed):
+    # K-fold split for GEO features
+    
     assert k > 1
     
     data = Data()
@@ -42,7 +42,6 @@ def make_data_geo(data_geo, label_geo,k,i,seed):
         else:
             X_train = torch.cat((X_train, X_part), dim=0) #dim=0增加行数，竖着连接
             Y_train = torch.cat((Y_train, y_part), dim=0)
-
 
     data.X_train= X_train
     data.X_test= X_test

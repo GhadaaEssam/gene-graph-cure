@@ -27,6 +27,7 @@ class MutiGAT(nn.Module):
         # self.graph_list = nn.ModuleList(self.graph_list)
         self.CrossEntropyLoss = nn.CrossEntropyLoss()
         self.generalization = GeneralizationGraph(embedding_dim = 4,data_x_shape = data_x_N,num_node_features=num_node_features)
+        
     def forward(self,data):
         out = torch.zeros_like(data.y)
         loss = torch.Tensor([0.]).to(next(self.parameters()).device)
