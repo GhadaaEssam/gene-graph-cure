@@ -163,3 +163,31 @@ def make_data(data_x,data_ppi_link_index,data_homolog_index,anchor_list,test_anc
     data.train_mask = torch.tensor(data_train_mask.values,dtype=torch.bool)
     data.test_mask = torch.tensor(data_test_mask.values,dtype=torch.bool)
     return data
+
+
+def preprocess_for_inference(raw_input):
+
+    # Build node features
+    x = torch.tensor(raw_input["node_features"], dtype=torch.float)
+
+    # Build edge indices
+    edge_index_ppi = torch.tensor(raw_input["ppi_edges"], dtype=torch.long)
+    edge_index_homolog = torch.tensor(raw_input["homolog_edges"], dtype=torch.long)
+
+    # Create graph data object
+    data = Data(
+        x=x,
+        edge_index={
+            "ppi": edge_index_ppi,
+            "homolog": edge_index_homolog
+        }
+    )
+
+    # Add dummy mask + labels
+    data.train_mask = torch.ones(x.size(0), dtype=torch.bool)
+    data.y = torch.zeros(x.size(0), dtype=torch.long)
+
+    # GEO tensor
+    geo_tensor = torch.tensor(raw_input["geo_features"], dtype=torch.float)
+
+    return data, geo_tensor
