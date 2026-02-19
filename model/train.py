@@ -23,8 +23,6 @@ def get_metrics(out_, edge_label_):
     out = out_.detach().cpu().numpy()
     edge_label = edge_label_.detach().cpu().numpy()
 
-
-
     pred = (out > 0.5).astype(int)
     auc = roc_auc_score(edge_label, out)
     f1 = f1_score(edge_label, pred)
@@ -42,8 +40,6 @@ def test(model,data,data_geo):
     prediction=result['vimp_g']
     temp=result['temp']
     cor=result['cor']
-
-
 
     out = out.max(dim=1).indices
     temp = temp.max(dim=1).indices
@@ -74,6 +70,7 @@ def train_model(data_geo, label_geo, anchor_list, data_x, data_ppi_link_index, d
     rankGauss = np.clip(rankGauss, -1+EPSILON, 1-EPSILON)
     rankGauss = erfinv(rankGauss) 
     data_geo = pd.DataFrame(rankGauss,columns=data_geo.columns)
+
     data_geo_obj = make_data_geo(data_geo, label_geo,10,4,4709)
 
     anchor_index = anchor_list.result_num[anchor_list.result_num==1].index
@@ -90,8 +87,6 @@ def train_model(data_geo, label_geo, anchor_list, data_x, data_ppi_link_index, d
     pgb2 = pgb(progressBarObj,20,40)
     train_edge_homolog , _ = get_train_edge(data_homolog_index, train_anchor,pgb2)
     
-
-
     data_obj = make_data(data_x,train_edge_ppi,train_edge_homolog,anchor_list,test_anchor)
 
 
