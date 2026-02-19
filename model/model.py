@@ -2,6 +2,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
 # from torch_geometric.datasets import Planetoid
 import torch_geometric.nn as pyg_nn
 import numpy as np
@@ -17,12 +18,16 @@ class MutiGAT(nn.Module):
         super(MutiGAT,self).__init__()
         self.num_muti_gat = num_muti_gat  # Number of GAT modules to ensemble
         # self.num_muti_graph = num_muti_graph
+
         self.data_x_N = data_x_N  # Total number of genes/nodes in the dataset
         self.gat_list = []
+
         # Edge types representing different biological relationships
         self.edge_type_list = ["ppi","homolog"]  # PPI: protein-protein interactions, Homolog: gene homology
+
         # self.edge_type_list = ["cor","ppi","homolog"]
         # self.graph_list= []
+        
         for i in range(num_muti_gat):
             self.gat_list.append(GraphCNN(in_c=num_node_features, hid_c=hid_c, out_c=out_c))
         # for i in range(num_muti_graph):
