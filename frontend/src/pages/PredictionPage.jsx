@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { startPrediction } from './api/predict';
-import { checkJobStatus } from './api/jobs';
+import { startPrediction } from '../api/predict';
+import { checkJobStatus } from '../api/jobs';
 
 export default function PredictionPage() {
   const [file, setFile] = useState(null);
