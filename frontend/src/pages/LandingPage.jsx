@@ -1,14 +1,25 @@
-import { Link } from "react-router-dom";
+import React from "react";
+import HeroSection from "../components/landing/HeroSection";
+import ChallengeSection from "../components/landing/ChallengeSection";
+import HowItWorksSection from "../components/landing/HowItWorksSection";
+import ExplainabilitySection from "../components/landing/ExplainabilitySection";
+import FeaturesSection from "../components/landing/FeaturesSection";
+import ResearchAudienceSection from "../components/landing/ResearchAudienceSection";
+import FooterSection from "../components/landing/FooterSection";
+
 
 function LandingPage() {
   return (
-    <div className="container text-center mt-5">
-      <h1>GeneGraphCure</h1>
-      <p>Predicting Cancer Drug Resistance</p>
-      <Link to="/predict" className="btn btn-primary">
-        Go to Prediction
-      </Link>
-    </div>
+    <>
+      <HeroSection />
+      <ChallengeSection />
+            <HowItWorksSection />
+            <ExplainabilitySection />
+      <FeaturesSection />
+      <ResearchAudienceSection />
+      <FooterSection />
+
+    </>
   );
 }
 
