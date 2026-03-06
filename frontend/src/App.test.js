@@ -1,14 +1,8 @@
-import { Routes, Route } from "react-router-dom";
-import LandingPage from "./pages/LandingPage";
-import PredictionPage from "./pages/PredictionPage";
+import { render, screen } from '@testing-library/react';
+import App from './App';
 
-function App() {
-  return (
-    <Routes>
-      <Route path="/" element={<LandingPage />} />
-      <Route path="/predict" element={<PredictionPage />} />
-    </Routes>
-  );
-}
-
-export default App;
+test('renders learn react link', () => {
+  render(<App />);
+  const linkElement = screen.getByText(/learn react/i);
+  expect(linkElement).toBeInTheDocument();
+});
