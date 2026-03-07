@@ -1,4 +1,3 @@
-# preprocess.py
 import torch
 from torch_geometric.data import Data
 import pandas as pd
@@ -166,29 +165,52 @@ def make_data(data_x,data_ppi_link_index,data_homolog_index,anchor_list,test_anc
     return data
 
 
-def preprocess_for_inference(raw_input):
+from scipy.special import erfinv
+import numpy as np
+import pandas as pd
+import torch
+from torch_geometric.data import Data
 
-    # Build node features
+EPSILON = 1e-6
+
+def preprocess_for_inference(raw_input):
+    # --- Node features (raw, matches data_x path in run()) ---
     x = torch.tensor(raw_input["node_features"], dtype=torch.float)
 
-    # Build edge indices
-    edge_index_ppi = torch.tensor(raw_input["ppi_edges"], dtype=torch.long)
-    edge_index_homolog = torch.tensor(raw_input["homolog_edges"], dtype=torch.long)
+    # --- Edge indices [num_edges, 2] → [2, num_edges] (matches make_data exactly) ---
+    edge_index_ppi     = torch.tensor(raw_input["ppi_edges"],     dtype=torch.long).t().contiguous()
+    edge_index_homolog = torch.tensor(raw_input["homolog_edges"], dtype=torch.long).t().contiguous()
 
-    # Create graph data object
-    data = Data(
-        x=x,
-        edge_index={
-            "ppi": edge_index_ppi,
-            "homolog": edge_index_homolog
-        }
-    )
+    # --- anchor_labels: defines data.y shape which mutiGAT uses for output sizing ---
+    anchor_labels = raw_input.get("anchor_labels")
+    if anchor_labels is not None:
+        data_y = torch.tensor(anchor_labels, dtype=torch.int)
+    else:
+        # No labels provided — all zeros, shape still correct for forward pass
+        data_y = torch.zeros(x.size(0), dtype=torch.int)
 
-    # Add dummy mask + labels
-    data.train_mask = torch.ones(x.size(0), dtype=torch.bool)
-    data.y = torch.zeros(x.size(0), dtype=torch.long)
+    # --- At inference: all nodes are prediction targets ---
+    data_test_mask  = torch.ones(x.size(0),  dtype=torch.bool)   # predict on all nodes
+    data_train_mask = torch.zeros(x.size(0), dtype=torch.bool)   # no training nodes
 
-    # GEO tensor
-    geo_tensor = torch.tensor(raw_input["geo_features"], dtype=torch.float)
+    # --- Assemble Data object ---
+    data = Data()
+    data.num_nodes         = x.size(0)
+    data.num_node_features = x.size(1)
+    data.x          = x
+    data.y          = data_y
+    data.test_mask  = data_test_mask
+    data.train_mask = data_train_mask
+    data.edge_index = {
+        "ppi":     edge_index_ppi,
+        "homolog": edge_index_homolog
+    }
+
+    # --- Rank-Gaussian normalization on geo features (matches data_geo path in run()) ---
+    geo_array = np.array(raw_input["geo_features"], dtype=np.float32)
+    rankGauss = (geo_array / geo_array.max() - 0.5) * 2
+    rankGauss = np.clip(rankGauss, -1 + EPSILON, 1 - EPSILON)
+    rankGauss = erfinv(rankGauss)
+    geo_tensor = torch.tensor(rankGauss, dtype=torch.float)
 
     return data, geo_tensor
