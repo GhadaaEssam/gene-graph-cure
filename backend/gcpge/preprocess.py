@@ -172,7 +172,6 @@ from torch_geometric.data import Data
 
 EPSILON = 1e-6
 
-
 def preprocess_for_inference(raw_input):
     # Helper to convert potential DataFrames/Series to numpy/tensors
     def to_df_values(key):
@@ -185,9 +184,10 @@ def preprocess_for_inference(raw_input):
     # If the CSV has an index column (like Gene Name), remove it before tensor conversion
     if node_feat.shape[1] > 1 and isinstance(node_feat, np.ndarray):
         # Assuming first column might be names if it's not all floats
-        # You may need to adjust this based on your CSV structure
+        # We may need to adjust this based on our CSV structure
         pass 
 
+    # Convert node features to tensor    
     x = torch.tensor(node_feat, dtype=torch.float)
     num_nodes = x.size(0)
 
@@ -202,8 +202,7 @@ def preprocess_for_inference(raw_input):
     # --- Anchor genes (Mirroring GUI behavior) ---
     anchor_df = raw_input.get("anchor_genes")
 
-    # The original research code used:
-    # anchor_index = anchor_list.result_num[anchor_list.result_num == 1].index
+    # Extract indices of anchors (where result_num == 1) for train/test mask creation
     if hasattr(anchor_df, "columns") and "result_num" in anchor_df.columns:
         # Filter rows where result_num is 1, then get their indices
         anchor_indices = anchor_df[anchor_df["result_num"] == 1].index.tolist()
@@ -216,9 +215,11 @@ def preprocess_for_inference(raw_input):
     # Convert to set for O(1) lookup
     anchor_indices_set = set(anchor_indices)
 
+    # Build train/test masks based on anchor membership
     train_mask = torch.zeros(num_nodes, dtype=torch.bool)
     labels = torch.zeros(num_nodes, dtype=torch.long)
 
+    # Mark nodes in the train_anchor set as True in the train_mask and label them as 1
     for idx in anchor_indices:
         try:
             i = int(idx) # Ensure it's an int
@@ -228,6 +229,7 @@ def preprocess_for_inference(raw_input):
         except (ValueError, TypeError):
             continue
 
+    # test_mask is simply the inverse of train_mask        
     test_mask = ~train_mask
 
     # --- Graph object ---
@@ -253,6 +255,7 @@ def preprocess_for_inference(raw_input):
     geo_array = np.clip(geo_array, -1 + EPSILON, 1 - EPSILON)
     geo_array = erfinv(geo_array)
 
+    # Convert to tensor for model input
     geo_tensor = torch.tensor(geo_array, dtype=torch.float)
 
     return data, geo_tensor

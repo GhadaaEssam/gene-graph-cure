@@ -5,8 +5,10 @@ from pathlib import Path
 import os
 import logging
 
+# Set up logging
 logger = logging.getLogger(__name__)
 
+# Initialize router
 router = APIRouter()
 
 # Project root setup
@@ -39,9 +41,6 @@ async def predict(
 ):
     """
     Run GC-PGE model inference using multipart file uploads.
-    
-    This replaces the JSON-based 'PredictionRequest' to handle 
-    large genomic matrices without memory timeouts.
     """
     try:
         # We pass the file objects directly to the service
@@ -54,7 +53,7 @@ async def predict(
             "homolog_edges": homolog_edges
         }
 
-        # Make sure your service method is 'async' to handle file reading
+        # The service will handle reading the files, preprocessing, and prediction
         result = await gc_pge_service.predict_from_files(raw_files)
 
         return result

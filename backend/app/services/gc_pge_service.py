@@ -15,9 +15,12 @@ from gcpge.preprocess import preprocess_for_inference
 
 class GC_PGE_Service:
     def __init__(self, model_path: str):
+
+        # Validate model path at initialization
         if not Path(model_path).exists():
             raise FileNotFoundError(f"Model weights not found at: {model_path}")
 
+        # Set device (GPU if available, else CPU)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         # Load model once
@@ -26,6 +29,8 @@ class GC_PGE_Service:
             map_location=self.device,
             weights_only=False
         )
+
+        # Move model to device and set to eval mode
         self.model.to(self.device)
         self.model.eval()
 
@@ -37,25 +42,22 @@ class GC_PGE_Service:
         
         # 1. Read the files from the streams
         contents = {key: await f.read() for key, f in files_dict.items()}
-
-        # --- Mirroring the GUI logic exactly ---
         
-        # [lineEdit_2] Sample expression matrix: First col is name, rest is data
+        # Sample expression matrix: First col is name, rest is data
         data_sample = pd.read_csv(io.BytesIO(contents["geo_features"]), header=0)
-        # Research code: sample_name = data_sample.iloc[:, 0] (ignored for math)
         processed_data["geo_features"] = data_sample.iloc[:, 1:] 
 
-        # [lineEdit_3] Characteristic genes (Anchor list)
+        # Characteristic genes (Anchor list)
         processed_data["anchor_genes"] = pd.read_csv(io.BytesIO(contents["anchor_genes"]), header=0)
 
-        # [lineEdit_4] Signal path network (data_x): First col is ID, rest is data
+        # Signal path network (data_x): First col is ID, rest is data
         data_x_raw = pd.read_csv(io.BytesIO(contents["node_features"]), header=0)
         processed_data["node_features"] = data_x_raw.iloc[:, 1:]
 
-        # [lineEdit_5] PPI network
+        # PPI network
         processed_data["ppi_edges"] = pd.read_csv(io.BytesIO(contents["ppi_edges"]), header=0)
 
-        # [lineEdit_6] Same origin network (Homolog)
+        # Same origin network (Homolog)
         processed_data["homolog_edges"] = pd.read_csv(io.BytesIO(contents["homolog_edges"]), header=0)
 
         # 2. Call the prediction logic with the correctly sliced DataFrames
@@ -69,9 +71,10 @@ class GC_PGE_Service:
         # accepts DataFrames as inputs instead of just Lists)
         
         with torch.no_grad():
-            # we just parsed from the CSVs.
+            # Preprocess the raw input data into tensors suitable for model inference
             data, geo_tensor = preprocess_for_inference(raw_input)
 
+            # Move data to the same device as the model
             data = data.to(self.device)
             geo_tensor = geo_tensor.to(self.device)
 
