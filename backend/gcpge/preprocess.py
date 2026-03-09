@@ -167,50 +167,92 @@ def make_data(data_x,data_ppi_link_index,data_homolog_index,anchor_list,test_anc
 
 from scipy.special import erfinv
 import numpy as np
-import pandas as pd
 import torch
 from torch_geometric.data import Data
 
 EPSILON = 1e-6
 
+
 def preprocess_for_inference(raw_input):
-    # --- Node features (raw, matches data_x path in run()) ---
-    x = torch.tensor(raw_input["node_features"], dtype=torch.float)
+    # Helper to convert potential DataFrames/Series to numpy/tensors
+    def to_df_values(key):
+        val = raw_input[key]
+        # If it's a Pandas object, get the underlying values
+        return val.values if hasattr(val, 'values') else val
 
-    # --- Edge indices [num_edges, 2] → [2, num_edges] (matches make_data exactly) ---
-    edge_index_ppi     = torch.tensor(raw_input["ppi_edges"],     dtype=torch.long).t().contiguous()
-    edge_index_homolog = torch.tensor(raw_input["homolog_edges"], dtype=torch.long).t().contiguous()
+    # --- Node features ---
+    node_feat = to_df_values("node_features")
+    # If the CSV has an index column (like Gene Name), remove it before tensor conversion
+    if node_feat.shape[1] > 1 and isinstance(node_feat, np.ndarray):
+        # Assuming first column might be names if it's not all floats
+        # You may need to adjust this based on your CSV structure
+        pass 
 
-    # --- anchor_labels: defines data.y shape which mutiGAT uses for output sizing ---
-    anchor_labels = raw_input.get("anchor_labels")
-    if anchor_labels is not None:
-        data_y = torch.tensor(anchor_labels, dtype=torch.int)
+    x = torch.tensor(node_feat, dtype=torch.float)
+    num_nodes = x.size(0)
+
+    # --- Edge indices ---
+    # Ensure these are purely integer indices for PyG
+    ppi_val = to_df_values("ppi_edges")
+    homolog_val = to_df_values("homolog_edges")
+    
+    edge_index_ppi = torch.tensor(ppi_val, dtype=torch.long).t().contiguous()
+    edge_index_homolog = torch.tensor(homolog_val, dtype=torch.long).t().contiguous()
+
+    # --- Anchor genes (Mirroring GUI behavior) ---
+    anchor_df = raw_input.get("anchor_genes")
+
+    # The original research code used:
+    # anchor_index = anchor_list.result_num[anchor_list.result_num == 1].index
+    if hasattr(anchor_df, "columns") and "result_num" in anchor_df.columns:
+        # Filter rows where result_num is 1, then get their indices
+        anchor_indices = anchor_df[anchor_df["result_num"] == 1].index.tolist()
+    elif hasattr(anchor_df, "tolist"):
+        # Fallback if it was already converted to a list/series elsewhere
+        anchor_indices = anchor_df.tolist()
     else:
-        # No labels provided — all zeros, shape still correct for forward pass
-        data_y = torch.zeros(x.size(0), dtype=torch.int)
+        anchor_indices = list(anchor_df)
 
-    # --- At inference: all nodes are prediction targets ---
-    data_test_mask  = torch.ones(x.size(0),  dtype=torch.bool)   # predict on all nodes
-    data_train_mask = torch.zeros(x.size(0), dtype=torch.bool)   # no training nodes
+    # Convert to set for O(1) lookup
+    anchor_indices_set = set(anchor_indices)
 
-    # --- Assemble Data object ---
+    train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+    labels = torch.zeros(num_nodes, dtype=torch.long)
+
+    for idx in anchor_indices:
+        try:
+            i = int(idx) # Ensure it's an int
+            if i < num_nodes:
+                train_mask[i] = True
+                labels[i] = 1
+        except (ValueError, TypeError):
+            continue
+
+    test_mask = ~train_mask
+
+    # --- Graph object ---
     data = Data()
-    data.num_nodes         = x.size(0)
+    data.num_nodes = num_nodes
     data.num_node_features = x.size(1)
-    data.x          = x
-    data.y          = data_y
-    data.test_mask  = data_test_mask
-    data.train_mask = data_train_mask
+    data.x = x
+    data.y = labels
+    data.train_mask = train_mask
+    data.test_mask = test_mask
     data.edge_index = {
-        "ppi":     edge_index_ppi,
+        "ppi": edge_index_ppi,
         "homolog": edge_index_homolog
     }
 
-    # --- Rank-Gaussian normalization on geo features (matches data_geo path in run()) ---
-    geo_array = np.array(raw_input["geo_features"], dtype=np.float32)
-    rankGauss = (geo_array / geo_array.max() - 0.5) * 2
-    rankGauss = np.clip(rankGauss, -1 + EPSILON, 1 - EPSILON)
-    rankGauss = erfinv(rankGauss)
-    geo_tensor = torch.tensor(rankGauss, dtype=torch.float)
+    # --- GEO features ---
+    geo_val = to_df_values("geo_features")
+    geo_array = np.array(geo_val, dtype=np.float32)
+
+    # Normalize and Rank-Gaussian
+    denom = np.max(np.abs(geo_array)) + EPSILON
+    geo_array = geo_array / denom
+    geo_array = np.clip(geo_array, -1 + EPSILON, 1 - EPSILON)
+    geo_array = erfinv(geo_array)
+
+    geo_tensor = torch.tensor(geo_array, dtype=torch.float)
 
     return data, geo_tensor
