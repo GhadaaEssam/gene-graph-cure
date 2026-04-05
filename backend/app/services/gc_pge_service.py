@@ -65,26 +65,31 @@ class GC_PGE_Service:
 
     def predict(self, raw_input: dict):
         """
-        Modified to ensure data types match what preprocess_for_inference expects.
+        Runs inference and returns all output keys from the model as JSON-serializable lists.
         """
-        # (Internal logic remains similar, ensuring your preprocess_for_inference 
-        # accepts DataFrames as inputs instead of just Lists)
-        
         with torch.no_grad():
-            # Preprocess the raw input data into tensors suitable for model inference
+            # 1. Preprocess data
             data, geo_tensor = preprocess_for_inference(raw_input)
 
-            # Move data to the same device as the model
+            # 2. Move to device
             data = data.to(self.device)
             geo_tensor = geo_tensor.to(self.device)
 
-            # Forward pass
+            # 3. Forward pass
+            # 'result' is the dictionary returned by your model's forward method
             result = self.model(data, geo_tensor)
 
-            # Convert tensors to Python lists for JSON response
-            return {
-                "prediction": result["out"].detach().cpu().tolist(),
-                "node_importance": result["cor"].detach().cpu().tolist(),
-                "graph_matrix": result["graph"].detach().cpu().tolist(),
-                "feature_weights": result["pw_w"].detach().cpu().tolist()
-            }
+            # 4. Clean up and convert ALL keys automatically
+            json_serializable_result = {}
+            for key, value in result.items():
+                if isinstance(value, torch.Tensor):
+                    # Detach, move to CPU, and convert to nested list
+                    json_serializable_result[key] = value.detach().cpu().tolist()
+                elif isinstance(value, (np.ndarray, np.generic)):
+                    # Handle any numpy arrays that might be in the output
+                    json_serializable_result[key] = value.tolist()
+                else:
+                    # Keep native Python types (ints, floats, lists) as is
+                    json_serializable_result[key] = value
+
+            return json_serializable_result

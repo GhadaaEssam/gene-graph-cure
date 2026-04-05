@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
+from pydantic import BaseModel, ConfigDict, Field
+from typing import List, Any, Union
 from enum import Enum
 
 class CancerType(str, Enum):
@@ -15,11 +15,20 @@ class PredictionRequest(BaseModel):
     anchor_genes: List[str]
 
 class PredictionResult(BaseModel):
-    prediction:       List[List[float]] = Field(..., description="Class probabilities [num_nodes, 2]")
-    node_importance:  List[float]       = Field(..., description="Per-node importance scores [num_nodes]")
-    graph_matrix:     List[List[float]] = Field(..., description="Learned adjacency matrix [num_nodes, num_nodes]")
-    feature_weights:  List[float] = Field(..., description="Pathway importance weights — shape from generalization()")
+    model_config = ConfigDict(extra='allow')
 
+    # Use Union to allow both single numbers and lists of numbers
+    loss_mutiGAT: Union[float, List[float]]
+    loss_L1: Union[float, List[float]]
+    
+    # Keeping the others as they were
+    out: List[List[float]]
+    cor: List[float]
+    graph: List[List[float]]
+    pw_w: List[float]
+    vimp_g: List[float]
+    temp: List[List[float]]
+        
 class JobStatus(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
