@@ -1,6 +1,10 @@
 venv/
 .venv/
+myenv/
 env/
 __pycache__/
 *.pyc
 .env
+*.pt
+*.pth
+D:\uni\Grad project\Predicting drug resistance\gene-graph-cure\dummy_input.json
