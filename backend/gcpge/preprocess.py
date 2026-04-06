@@ -1,4 +1,3 @@
-# preprocess.py
 import torch
 from torch_geometric.data import Data
 import pandas as pd
@@ -166,29 +165,97 @@ def make_data(data_x,data_ppi_link_index,data_homolog_index,anchor_list,test_anc
     return data
 
 
+from scipy.special import erfinv
+import numpy as np
+import torch
+from torch_geometric.data import Data
+
+EPSILON = 1e-6
+
 def preprocess_for_inference(raw_input):
+    # Helper to convert potential DataFrames/Series to numpy/tensors
+    def to_df_values(key):
+        val = raw_input[key]
+        # If it's a Pandas object, get the underlying values
+        return val.values if hasattr(val, 'values') else val
 
-    # Build node features
-    x = torch.tensor(raw_input["node_features"], dtype=torch.float)
+    # --- Node features ---
+    node_feat = to_df_values("node_features")
+    # If the CSV has an index column (like Gene Name), remove it before tensor conversion
+    if node_feat.shape[1] > 1 and isinstance(node_feat, np.ndarray):
+        # Assuming first column might be names if it's not all floats
+        # We may need to adjust this based on our CSV structure
+        pass 
 
-    # Build edge indices
-    edge_index_ppi = torch.tensor(raw_input["ppi_edges"], dtype=torch.long)
-    edge_index_homolog = torch.tensor(raw_input["homolog_edges"], dtype=torch.long)
+    # Convert node features to tensor    
+    x = torch.tensor(node_feat, dtype=torch.float)
+    num_nodes = x.size(0)
 
-    # Create graph data object
-    data = Data(
-        x=x,
-        edge_index={
-            "ppi": edge_index_ppi,
-            "homolog": edge_index_homolog
-        }
-    )
+    # --- Edge indices ---
+    # Ensure these are purely integer indices for PyG
+    ppi_val = to_df_values("ppi_edges")
+    homolog_val = to_df_values("homolog_edges")
+    
+    edge_index_ppi = torch.tensor(ppi_val, dtype=torch.long).t().contiguous()
+    edge_index_homolog = torch.tensor(homolog_val, dtype=torch.long).t().contiguous()
 
-    # Add dummy mask + labels
-    data.train_mask = torch.ones(x.size(0), dtype=torch.bool)
-    data.y = torch.zeros(x.size(0), dtype=torch.long)
+    # --- Anchor genes (Mirroring GUI behavior) ---
+    anchor_df = raw_input.get("anchor_genes")
 
-    # GEO tensor
-    geo_tensor = torch.tensor(raw_input["geo_features"], dtype=torch.float)
+    # Extract indices of anchors (where result_num == 1) for train/test mask creation
+    if hasattr(anchor_df, "columns") and "result_num" in anchor_df.columns:
+        # Filter rows where result_num is 1, then get their indices
+        anchor_indices = anchor_df[anchor_df["result_num"] == 1].index.tolist()
+    elif hasattr(anchor_df, "tolist"):
+        # Fallback if it was already converted to a list/series elsewhere
+        anchor_indices = anchor_df.tolist()
+    else:
+        anchor_indices = list(anchor_df)
+
+    # Convert to set for O(1) lookup
+    anchor_indices_set = set(anchor_indices)
+
+    # Build train/test masks based on anchor membership
+    train_mask = torch.zeros(num_nodes, dtype=torch.bool)
+    labels = torch.zeros(num_nodes, dtype=torch.long)
+
+    # Mark nodes in the train_anchor set as True in the train_mask and label them as 1
+    for idx in anchor_indices:
+        try:
+            i = int(idx) # Ensure it's an int
+            if i < num_nodes:
+                train_mask[i] = True
+                labels[i] = 1
+        except (ValueError, TypeError):
+            continue
+
+    # test_mask is simply the inverse of train_mask        
+    test_mask = ~train_mask
+
+    # --- Graph object ---
+    data = Data()
+    data.num_nodes = num_nodes
+    data.num_node_features = x.size(1)
+    data.x = x
+    data.y = labels
+    data.train_mask = train_mask
+    data.test_mask = test_mask
+    data.edge_index = {
+        "ppi": edge_index_ppi,
+        "homolog": edge_index_homolog
+    }
+
+    # --- GEO features ---
+    geo_val = to_df_values("geo_features")
+    geo_array = np.array(geo_val, dtype=np.float32)
+
+    # Normalize and Rank-Gaussian
+    denom = np.max(np.abs(geo_array)) + EPSILON
+    geo_array = geo_array / denom
+    geo_array = np.clip(geo_array, -1 + EPSILON, 1 - EPSILON)
+    geo_array = erfinv(geo_array)
+
+    # Convert to tensor for model input
+    geo_tensor = torch.tensor(geo_array, dtype=torch.float)
 
     return data, geo_tensor

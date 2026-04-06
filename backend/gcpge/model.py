@@ -1,3 +1,4 @@
+# model.py
 # PyTorch core modules for neural network construction
 import torch
 import torch.nn as nn
@@ -29,7 +30,7 @@ class MutiGAT(nn.Module):
         # self.graph_list= []
         
         for i in range(num_muti_gat):
-            self.gat_list.append(GraphCNN(in_c=num_node_features, hid_c = hid_c, out_c=out_c))
+            self.gat_list.append(GraphCNN(in_c=num_node_features, hid_c=hid_c, out_c=out_c))
         # for i in range(num_muti_graph):
         #     self.graph_list.append(GraphCNN_Generalization(in_c=num_node_features, hid_c=hid_c, out_c=out_c,data_x_N=data_x_N))
         

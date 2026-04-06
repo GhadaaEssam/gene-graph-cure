@@ -46,8 +46,8 @@ def predict_model(model_path, data_geo, anchor_list, data_x, data_ppi_link_index
     """Load trained model and make drug resistance predictions for test samples.
     
     Args:
-        model_path: Path to saved model weights
-        data_geo: Genomic features DataFrame (samples x genes)
+        model_path: Path to saved model weights 
+        data_geo: Genomic features DataFrame (samples x genes) 
         anchor_list: Known drug response labels for training samples
         data_x: Normalized genomic features for all samples
         data_ppi_link_index: Protein-protein interaction network edges
