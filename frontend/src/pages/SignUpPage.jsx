@@ -1,7 +1,10 @@
 import React from "react";
 import { Container, Card, Form, Button } from "react-bootstrap";
+import { useNavigate } from "react-router-dom";
 
 function SignUpPage() {
+  const navigate = useNavigate(); 
+
   return (
     <Container className="d-flex justify-content-center align-items-center" style={{ minHeight: "90vh" }}>
       <Card style={{ width: "450px", padding: "25px" }}>
@@ -23,7 +26,12 @@ function SignUpPage() {
             <Form.Control type="password" placeholder="Create password" />
           </Form.Group>
 
-          <Button variant="primary" className="w-100">
+          {/* الزرار بعد التظبيط */}
+          <Button 
+            variant="primary" 
+            className="w-100 mt-3" 
+            onClick={() => navigate('/dashboard')}
+          >
             Sign Up
           </Button>
         </Form>

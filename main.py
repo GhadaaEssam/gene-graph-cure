@@ -17,7 +17,7 @@ simplefilter(action="ignore",category=FutureWarning)
 
 
 class Stream(QObject):
-    """【输出重定向】重定向控制台输出到文本框控件"""
+    """[Output redirection] Redirect console output to text box control"""
     newText = pyqtSignal(str)
     
     def write(self, text):
@@ -30,21 +30,21 @@ class TrainThread(QThread):
         super().__init__()
         self.uiObj = uiObj
 
-    # 自定义信号
+    # Custom signal
     finished = pyqtSignal()
     
-    progress = pyqtSignal(int)  # 进度信号
+    progress = pyqtSignal(int)  # Progress signal
  
-    # 线程任务
+    # Thread task
     def run(self):
-        # 读取输入文件
+        # Read input files
         data_geo = pd.read_csv(self.uiObj.lineEdit_7.text(), header= 0).iloc[:,1:]
         label_geo = pd.read_csv(self.uiObj.lineEdit_8.text(),header=0).iloc[:,1]
         anchor_list = pd.read_csv(self.uiObj.lineEdit_9.text(), header= 0)
         data_x = pd.read_csv(self.uiObj.lineEdit_10.text(),header=0).iloc[:,1:]
         data_ppi_link_index = pd.read_csv(self.uiObj.lineEdit_11.text(),header=0)
         data_homolog_index = pd.read_csv(self.uiObj.lineEdit_12.text(),header=0)
-        # 调用模型训练方法并传递进度信号
+        # Call model training method and pass progress signal
         train_model(data_geo,label_geo,anchor_list,data_x,data_ppi_link_index,data_homolog_index,self.progress)
 
 class predictThread(QThread):
@@ -52,26 +52,37 @@ class predictThread(QThread):
         super().__init__()
         self.uiObj = uiObj
 
-    # 自定义信号
+    # Custom signal
     finished = pyqtSignal()
     
-    progress = pyqtSignal(int)  # 进度信号
+    progress = pyqtSignal(int)  # Progress signal
     tableWidget = pyqtSignal(dict)
     item_v = pyqtSignal(dict)
  
-    # 线程run方法
+    # Thread run method
     def run(self):
+        # model
         model_path = self.uiObj.lineEdit.text()
+
+        # sample expression matrix
         data_sample = pd.read_csv(self.uiObj.lineEdit_2.text(), header= 0)
         sample_name = data_sample.iloc[:,0]
-        
         data_geo = data_sample.iloc[:,1:]
 
         pw_id = pd.read_csv(r"gui/pw_id.csv", header= 0).iloc[:,1]
+
+        # characteristic genes
         anchor_list = pd.read_csv(self.uiObj.lineEdit_3.text(), header= 0)
+
+        # signal path network
         data_x = pd.read_csv(self.uiObj.lineEdit_4.text(),header=0).iloc[:,1:]
+
+        # ppi network
         data_ppi_link_index = pd.read_csv(self.uiObj.lineEdit_5.text(),header=0)
+
+        # same origin network
         data_homolog_index = pd.read_csv(self.uiObj.lineEdit_6.text(),header=0)
+        
         result = predict_model(model_path,data_geo,anchor_list,data_x,data_ppi_link_index,data_homolog_index,self.progress)
         
         df = pd.concat([pd.DataFrame({"sample_name":sample_name.values}),pd.DataFrame({"predict":result["out"]})],axis=1)
@@ -111,8 +122,8 @@ class MyApp(QMainWindow, Ui_MainWindow):
         self.console_obj = self.textEdit
        
         ##################
-        #这里定义按钮消息
-        """ 1.定义选择文件消息 """
+        # Define button messages here
+        """ 1. Define select file message """
         self.toolButton.clicked.connect(lambda: self.select_file(self.lineEdit))
         self.toolButton_2.clicked.connect(lambda: self.select_file(self.lineEdit_2))
         self.toolButton_3.clicked.connect(lambda: self.select_file(self.lineEdit_3))
@@ -128,7 +139,7 @@ class MyApp(QMainWindow, Ui_MainWindow):
 
         ##################
 
-        #定义 模型训练-运算（按钮）
+        # Define model training-computation (button)
         self.pushButton_6.clicked.connect(self.train)
         self.pushButton.clicked.connect(self.predict)
 
@@ -137,22 +148,22 @@ class MyApp(QMainWindow, Ui_MainWindow):
 
 
     ####################
-    #下面定义相关方法，对应于上面的按钮消息
+    # Below define related methods, corresponding to the button messages above
     
-    """ 1.定义选择文件方法 """
+    """ 1. Define select file method """
     def select_file(self,obj):
         filename, _ = QFileDialog.getOpenFileName(self, 'Open file', '/path/to/initial/directory')
         if filename:
             obj.setText(filename)
 
-    """ 2.定义日志输出 """
+    """ 2. Define log output """
     def closeEvent(self, event):
-        """【输出重定向】重写closeEvent,程序结束时将stdout恢复默认"""
+        """[Output redirection] Override closeEvent, restore stdout to default when program ends"""
         sys.stdout = sys.__stdout__
         super().closeEvent(event)
  
     def onUpdateText(self, text):
-        """【输出重定向】重定向控制台输出到文本框控件"""
+        """[Output redirection] Redirect console output to text box control"""
         cursor = self.console_obj.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertText(text)
@@ -160,36 +171,36 @@ class MyApp(QMainWindow, Ui_MainWindow):
         self.console_obj.ensureCursorVisible()
 
 
-    """ 3.定义模型训练 """
+    """ 3. Define model training """
     def train(self):
-        # 禁用按钮，防止多次启动线程
+        # Disable button to prevent multiple thread starts
         self.pushButton_6.setEnabled(False)
 
         self.console_obj = self.textEdit
  
-        # 创建和启动工作线程
+        # Create and start worker thread
         self.trainThread = TrainThread(self)
-        self.trainThread.finished.connect(self.trainFinished)  # 连接任务完成信号
-        self.trainThread.progress.connect(self.updateProgress)    # 连接进度信号
+        self.trainThread.finished.connect(self.trainFinished)  # Connect task completion signal
+        self.trainThread.progress.connect(self.updateProgress)    # Connect progress signal
  
-        self.trainThread.start()  # 启动线程
+        self.trainThread.start()  # Start thread
     def trainFinished(self):
         self.pushButton_6.setEnabled(True)
     def updateProgress(self, value):
         self.progressBar_3.setValue(value)
 
-    """ 4.定义模型预测 """
+    """ 4. Define model prediction """
     def predict(self):
         self.pushButton.setEnabled(False)
         self.console_obj = self.textEdit_2
 
-        # 创建和启动工作线程
+        # Create and start worker thread
         self.predictThread = predictThread(self)
-        self.predictThread.finished.connect(self.predictFinished)  # 连接任务完成信号
-        self.predictThread.progress.connect(self.updateProgress2)    # 连接进度信号
-        self.predictThread.tableWidget.connect(self.setTable)    # 连接表格信号
-        self.predictThread.item_v.connect(self.updateItem)    # 连接表格信号
-        self.predictThread.start()  # 启动线程
+        self.predictThread.finished.connect(self.predictFinished)  # Connect task completion signal
+        self.predictThread.progress.connect(self.updateProgress2)    # Connect progress signal
+        self.predictThread.tableWidget.connect(self.setTable)    # Connect table signal
+        self.predictThread.item_v.connect(self.updateItem)    # Connect table signal
+        self.predictThread.start()  # Start thread
         
     def predictFinished(self):
         self.pushButton.setEnabled(True)

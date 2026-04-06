@@ -7,3 +7,5 @@ app = FastAPI()
 app.include_router(predict.router)
 app.include_router(jobs.router)
 app.include_router(analyses.router)
+
+# python -m uvicorn app.main:app --reload

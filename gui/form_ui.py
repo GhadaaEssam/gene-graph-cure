@@ -560,16 +560,22 @@ class Ui_MainWindow(object):
         self.groupBox.setTitle(_translate("MainWindow", "Data input"))
         self.label.setToolTip(_translate("MainWindow", "<html><head/><body><p>Please select the input sample expression value matrix file</p></body></html>"))
         self.label.setText(_translate("MainWindow", "Model selection:"))
+        
         self.label_2.setToolTip(_translate("MainWindow", "<html><head/><body><p>Please select the input sample label file</p></body></html>"))
         self.label_2.setText(_translate("MainWindow", "Sample expression matrix:"))
+        
         self.label_3.setToolTip(_translate("MainWindow", "<html><head/><body><p>Please select feature genes. If you need to randomly select feature genes to add to the training, you need to check the (Select Feature Genes) option.</p></body></html>"))
         self.label_3.setText(_translate("MainWindow", "Characteristic genes:"))
+        
         self.label_4.setToolTip(_translate("MainWindow", "<html><head/><body><p>Please select the signal path network file.</p></body></html>"))
         self.label_4.setText(_translate("MainWindow", "Signal path network:"))
+        
         self.label_5.setToolTip(_translate("MainWindow", "<html><head/><body><p>Please select a PPI network file.</p></body></html>"))
         self.label_5.setText(_translate("MainWindow", "PPI Network:"))
+        
         self.label_6.setToolTip(_translate("MainWindow", "<html><head/><body><p>Please select a homologous gene network file.</p></body></html>"))
         self.label_6.setText(_translate("MainWindow", "Same origin network:"))
+        
         self.toolButton.setText(_translate("MainWindow", "..."))
         self.toolButton_2.setText(_translate("MainWindow", "..."))
         self.toolButton_3.setText(_translate("MainWindow", "..."))
