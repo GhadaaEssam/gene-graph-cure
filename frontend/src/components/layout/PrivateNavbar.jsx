@@ -52,7 +52,7 @@ function PrivateNavbar() {
               height="36"
               className="d-inline-block align-top"
             />
-            <span className="brand-text">HOME</span>
+            <span className="brand-text">GeneGraph</span>
           </Navbar.Brand>
 
           <Navbar.Toggle aria-controls="private-navbar-nav" />

@@ -8,14 +8,15 @@ function MainNavbar() {
     <Navbar bg="white" expand="lg" className="py-2 border-bottom">
       <Container>
 
-        {/* Logo */}
-        <Navbar.Brand as={Link} to="/">
-          <img
-            src={logo}
-            alt="GeneGraphCure"
-            height="32"
-            className="d-inline-block align-top"
-          />
+       {/* تم تغيير HOME إلى اسم المشروع */}
+        <Navbar.Brand as={Link} to="/" className="d-flex align-items-center gap-2">
+           <img
+          src={logo}
+          alt="GeneGraph Logo"
+          height="36"
+          className="d-inline-block align-top"
+           />
+         <span className="brand-text">GeneGraph</span>
         </Navbar.Brand>
 
         <Navbar.Toggle />
