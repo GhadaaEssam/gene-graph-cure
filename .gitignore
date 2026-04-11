@@ -8,3 +8,4 @@ __pycache__/
 *.pt
 *.pth
 D:\uni\Grad project\Predicting drug resistance\gene-graph-cure\dummy_input.json
+data/
