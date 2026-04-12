@@ -1,3 +1,11 @@
+# Tell pip to look at the PyTorch CUDA servers first!
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# --- GPU Accelerated PyTorch ---
+torch==2.3.0+cu121
+torchvision==0.18.0+cu121
+torchaudio==2.3.0+cu121
+
 # --- RAG & Knowledge Base ---
 langchain==0.1.16
 langchain-community==0.0.34
@@ -8,7 +16,6 @@ sentence-transformers==2.7.0
 # --- Core ML Data Processing ---
 pandas==2.2.2
 numpy==1.26.4
-torch==2.3.0
 
 # --- Backend API ---
 fastapi==0.110.2
