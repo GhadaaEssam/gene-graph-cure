@@ -10,3 +10,6 @@ __pycache__/
 D:\uni\Grad project\Predicting drug resistance\gene-graph-cure\dummy_input.json
 data/
 ipynb_checkpoints/
+weights/
+tests/*.json
+

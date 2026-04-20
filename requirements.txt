@@ -5,6 +5,7 @@
 torch==2.3.0+cu121
 torchvision==0.18.0+cu121
 torchaudio==2.3.0+cu121
+torch-geometric==2.6.1
 
 # --- RAG & Knowledge Base ---
 langchain==0.1.16
@@ -21,3 +22,4 @@ numpy==1.26.4
 fastapi==0.110.2
 uvicorn==0.29.0
 python-dotenv==1.0.1
+python-multipart==0.0.9

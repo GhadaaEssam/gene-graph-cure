@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import List, Any, Union
+from typing import List, Any, Union, Dict, Optional
 from enum import Enum
 
 class CancerType(str, Enum):
@@ -28,6 +28,9 @@ class PredictionResult(BaseModel):
     pw_w: List[float]
     vimp_g: List[float]
     temp: List[List[float]]
+    
+    # Add this line for the RAG output
+    rag_evidence: Optional[List[Dict[str, str]]] = None
         
 class JobStatus(str, Enum):
     PENDING = "PENDING"

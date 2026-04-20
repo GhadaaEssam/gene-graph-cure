@@ -5,6 +5,11 @@ from pathlib import Path
 import os
 import logging
 
+# for rag service
+from app.services.rag_service import RAGService
+import pandas as pd
+import io
+
 # Set up logging
 logger = logging.getLogger(__name__)
 
@@ -31,6 +36,14 @@ try:
 except Exception as e:
     raise RuntimeError(f"Failed to initialize GC_PGE_Service: {e}")
 
+# 2. Initialize your RAG Service once at startup
+try:
+    rag_service = RAGService()
+    logger.info("RAG Service initialized successfully.")
+except Exception as e:
+    logger.warning(f"RAG Service failed to start: {e}")
+    
+
 @router.post("/predict", response_model=PredictionResult)
 async def predict(
     geo_features: UploadFile = File(...),
@@ -55,7 +68,23 @@ async def predict(
 
         # The service will handle reading the files, preprocessing, and prediction
         result = await gc_pge_service.predict_from_files(raw_files)
+        
+        
+        # --- THE RAG INTEGRATION STARTS HERE ---
+        # We need to read the anchor_genes file to map the names
+        # Reset file pointer just in case the previous service consumed it
+        await anchor_genes.seek(0)
+        anchor_content = await anchor_genes.read()
+        anchor_df = pd.read_csv(io.BytesIO(anchor_content), header=0)
 
+        # Generate the medical context!
+        evidence = rag_service.generate_evidence(result, anchor_df)
+        
+        # Attach it to the final JSON response
+        result["rag_evidence"] = evidence
+        # --- THE RAG INTEGRATION ENDS HERE ---
+        
+        
         return result
 
     except ValueError as e:
