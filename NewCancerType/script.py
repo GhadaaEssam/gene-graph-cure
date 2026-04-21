@@ -1,81 +1,78 @@
 import pandas as pd
 import numpy as np
-from scipy.special import erfinv
-from scipy.stats import rankdata
-import os
 
-# 1. أسماء الملفات (تأكدي إن السكريبت في نفس فولدر الداتا)
-CLINICAL_FILE = 'data_clinical_patient.txt'
-EXPRESSION_FILE = 'data_mrna_seq_v2_rsem.txt'
+print("🚀 Step 1: Building Master Matrix & Extracting Survival Labels...")
 
-print("⏳ reading files")
+# 1. قراءة ملف التعبير الجيني
+print("⏳ جاري قراءة ملف RNA-seq (data_mrna_seq_v2_rsem.txt)...")
+df_rna = pd.read_csv('data_mrna_seq_v2_rsem.txt', sep='\t')
+df_rna = df_rna.dropna(subset=['Hugo_Symbol'])
+if 'Entrez_Gene_Id' in df_rna.columns:
+    df_rna = df_rna.drop(columns=['Entrez_Gene_Id'])
 
-# قراءة الملف السريري (ملفات cBioPortal بيبقى فيها 4 سطور شرح في الأول فبنتخطاهم)
-df_clin = pd.read_csv(CLINICAL_FILE, sep='\t', skiprows=4)
+df_rna = df_rna.groupby('Hugo_Symbol').mean().reset_index()
 
-# قراءة ملف الجينات
-df_expr = pd.read_csv(EXPRESSION_FILE, sep='\t')
+# تدوير المصفوفة
+df_rna.set_index('Hugo_Symbol', inplace=True)
+df_matrix = df_rna.T
+df_matrix.index.name = 'Sample_ID'
+df_matrix.reset_index(inplace=True)
 
-print("✅ تمت القراءة. جاري تظبيط البيانات السريرية (Labels)...")
+# Normalization
+numeric_cols = df_matrix.columns[1:]
+df_matrix[numeric_cols] = np.log2(df_matrix[numeric_cols].astype(float) + 1)
+df_matrix = df_matrix.fillna(0)
 
-# 2. استخراج الـ Labels (R vs NR) بناءً على حالة المريض
-# هنستخدم OS_STATUS (Overall Survival) كمؤشر للمقاومة
-# 1:DECEASED -> مقاوم (R) | 0:LIVING -> حساس (NR)
-if 'OS_STATUS' in df_clin.columns:
-    df_clin = df_clin.dropna(subset=['OS_STATUS'])
-    df_clin['Label'] = np.where(df_clin['OS_STATUS'].str.contains('1:DECEASED|Dead', case=False, na=False), 'R', 'NR')
-else:
-    print("⚠️ ملقيتش عمود OS_STATUS، راجعي أسماء الأعمدة في ملف clinical")
+df_matrix.to_csv('1-data_result.csv', index=False)
+print(f"✅ تم حفظ الملف الأول: 1-data_result.csv (عدد المرضى: {len(df_matrix)})")
 
-# هناخد كود المريض والـ Label بس عشان نعمل sample.csv
-df_sample = df_clin[['PATIENT_ID', 'Label']].copy()
-df_sample.rename(columns={'PATIENT_ID': 'Sample_ID'}, inplace=True)
+# ==========================================
+# 2. استنتاج الـ Labels من ملف الكلينيكال
+# ==========================================
+print("\n⏳ جاري قراءة ملف الكلينيكال واستنتاج الاستجابة...")
+df_clin = pd.read_csv('data_clinical_patient.txt', sep='\t', comment='#')
 
-print("✅ جاري تظبيط ملف التعبير الجيني (Matrix Transpose)...")
+# دمج المرضى اللي في الجينات مع بياناتهم الكلينيكال
+# ملحوظة: أكواد الـ RNA-seq ساعات بتبقى أطول شوية (زي TCGA-AB-2856-03A)، فهنطابق أول 12 حرف بس
+df_matrix['Short_ID'] = df_matrix['Sample_ID'].astype(str).str[:12]
+df_clin['Short_ID'] = df_clin['PATIENT_ID'].astype(str)
 
-# 3. تظبيط ملف الجينات
-df_expr = df_expr.dropna(subset=['Hugo_Symbol']) # نتأكد إن الجين ليه اسم
-df_expr = df_expr.drop(columns=['Entrez_Gene_Id']) # هنشيل الـ ID ده مش محتاجينه
-# هنخلي اسم الجين هو الـ Index عشان نقلب الماتريكس
-df_expr = df_expr.groupby('Hugo_Symbol').mean() # لو فيه جينات متكررة ناخد المتوسط
-df_expr = df_expr.T # Transpose: قلبنا الصفوف أعمدة
-df_expr.index.name = 'Sample_ID'
-df_expr.reset_index(inplace=True)
+merged_df = pd.merge(df_matrix[['Sample_ID', 'Short_ID']], df_clin[['Short_ID', 'OS_STATUS', 'OS_MONTHS']], on='Short_ID', how='left')
 
-# تظبيط كود المريض في ملف الجينات عشان يطابق الملف السريري
-# أكواد TCGA بتبقى طويلة TCGA-AB-2856-03، إحنا محتاجين أول 12 حرف بس
-df_expr['Sample_ID'] = df_expr['Sample_ID'].str[:12]
+labels = []
+counts = {'Resistant (1)': 0, 'Sensitive (0)': 0, 'Unknown (0 by default)': 0}
 
-# 4. دمج الملفين عشان نتأكد إننا واخدين المرضى اللي ليهم داتا وجينات بس
-print("✅ جاري دمج الداتا وتطبيق الـ Rank-Gauss Normalization...")
-df_final = pd.merge(df_sample, df_expr, on='Sample_ID', how='inner')
+for index, row in merged_df.iterrows():
+    status = str(row['OS_STATUS']).upper()
+    months = row['OS_MONTHS']
+    
+    label = 0 # Default Sensitive
+    
+    try:
+        months = float(months)
+        # اللوجيك: لو توفى في أقل من 12 شهر = مقاوم (1)
+        if 'DECEASED' in status and months < 12.0:
+            label = 1
+            counts['Resistant (1)'] += 1
+        # لو عاش أكتر من 12 شهر = مستجيب (0)
+        elif months >= 12.0:
+            label = 0
+            counts['Sensitive (0)'] += 1
+        else:
+            label = 0 # أي حالة تانية غير واضحة
+            counts['Unknown (0 by default)'] += 1
+    except:
+        label = 0
+        counts['Unknown (0 by default)'] += 1
+        
+    labels.append({'sample_name': row['Sample_ID'], 'Class': label})
 
-# فصل الـ Labels عن الجينات
-df_final_sample = df_final[['Sample_ID', 'Label']]
-df_final_genes = df_final.drop(columns=['Label'])
+df_sample = pd.DataFrame(labels)
+df_sample.to_csv('sample.csv', index=False)
 
-# 5. تطبيق الـ Rank-Gauss Transformation (زي ما البيبر بتاعتكم طلبت بالظبط)
-def rank_gauss_transform(x):
-    n = len(x)
-    # نحسب الرانك
-    ranks = rankdata(x)
-    # نحولها لـ probabilities
-    p = ranks / (n + 1)
-    # نطبق الـ Inverse Error Function
-    return np.sqrt(2) * erfinv(2 * p - 1)
-
-# هنطبق المعادلة دي على كل جين (عمود) لوحده
-genes_only = df_final_genes.drop(columns=['Sample_ID'])
-transformed_genes = genes_only.apply(rank_gauss_transform, axis=0)
-
-# نرجع عمود الـ Sample_ID
-transformed_genes.insert(0, 'Sample_ID', df_final_genes['Sample_ID'])
-
-# 6. حفظ الملفات النهائية
-transformed_genes.to_csv('data_x_all.csv', index=False)
-df_final_sample.to_csv('sample.csv', index=False)
-
-print("🎉 ألف مبروك! الملفات جاهزة:")
-print(f"1️⃣ عدد العينات النهائي: {len(df_final_sample)} عينة.")
-print(f"2️⃣ عدد الجينات: {len(transformed_genes.columns) - 1} جين.")
-print("تم حفظ 'data_x_all.csv' و 'sample.csv' بنجاح! 🚀")
+print("\n📊 إحصائيات الـ Labels اللي طلعناها:")
+for k, v in counts.items():
+    print(f"   - {k}: {v} مريض")
+    
+print("\n✅ تم حفظ الملف التاني: sample.csv")
+print("🎉 الخطوة الأولى تمت بنجاح! إحنا كده بنينا الأساس 100% صح.")

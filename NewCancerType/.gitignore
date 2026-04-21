@@ -1,0 +1,17 @@
+# Ignore raw large data files
+*.txt
+*.tar.gz
+*.seg
+case_lists/
+
+# Keep our final generated model files
+!1-data_result.csv
+!sample.csv
+!2-pubmed_result.csv
+!ppi_link.csv
+!homolog_AML.csv
+!3-data_x_all.csv
+
+# Ignore Python cache
+__pycache__/
+*.pyc

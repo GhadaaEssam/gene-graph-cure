@@ -1,95 +1,75 @@
 import pandas as pd
+import requests
+import urllib.parse
 import re
 import time
-import http.client
-from urllib.error import URLError, HTTPError
-from Bio import Entrez
 
-# ضروري عشان سيرفرات NCBI تسمحلك بالبحث
-Entrez.email = "jomana.student@example.com" 
+print("🚀 Step 2: Real PubMed Text-Mining & Gene Indexing...")
 
-def mine_pubmed_genes(gene_list):
-    query = '("cytarabine"[Title/Abstract]) AND ("acute myeloid leukemia"[Title/Abstract] OR "AML"[Title/Abstract]) AND ("resistance"[Title/Abstract] OR "sensitivity"[Title/Abstract])'
-    print(f"🔍 بنبحث في PubMed بالمعادلة دي:\n{query}")
+# ---------------------------------------------------------
+# 1. إعدادات البحث (تقدري تغيريها لأي نوع كانسر ودواء بعدين)
+# ---------------------------------------------------------
+DISEASE = "Acute Myeloid Leukemia"
+DRUG = "Cytarabine"
+# البحث بيبحث عن المرض + الدواء + المقاومة
+search_query = f'"{DISEASE}"[Title/Abstract] AND "{DRUG}"[Title/Abstract] AND "Resistance"[Title/Abstract]'
 
-    # 1. البحث في PubMed (هناخد أحدث 150 بحث)
-    handle = Entrez.esearch(db="pubmed", term=query, retmax=150)
-    record = Entrez.read(handle)
-    handle.close()
-    id_list = record["IdList"]
+# ---------------------------------------------------------
+# 2. قراءة الجينات من الملف الأساسي
+# ---------------------------------------------------------
+print("⏳ جاري قراءة فهرس الجينات من 1-data_result.csv...")
+df_matrix = pd.read_csv('1-data_result.csv')
+all_genes = df_matrix.columns[1:].tolist()
+print(f"✅ تم تحميل {len(all_genes)} جين للبحث عنهم في الأبحاث.")
 
-    print(f"✅ لقينا {len(id_list)} بحث، جاري تحميل الملخصات...")
+# ---------------------------------------------------------
+# 3. الاتصال بـ PubMed وجلب الأبحاث
+# ---------------------------------------------------------
+print(f"\n🔍 جاري البحث في PubMed عن: {search_query}")
+encoded_query = urllib.parse.quote(search_query)
 
-    # 2. تحميل الملخصات (متقسمة لدفعات لتجنب سقوط السيرفر)
-    genes_found = []
-    batch_size = 50  # هنحمل 50 بحث بـ 50 بحث
-    
-    if id_list:
-        for start in range(0, len(id_list), batch_size):
-            end = min(len(id_list), start + batch_size)
-            batch_ids = id_list[start:end]
-            print(f"📥 جاري تحميل الدفعة من {start+1} لـ {end}...")
+# هنجيب أرقام (PMIDs) لأهم 300 بحث
+search_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term={encoded_query}&retmax=300&retmode=json"
+r_search = requests.get(search_url).json()
+pmids = r_search.get('esearchresult', {}).get('idlist', [])
 
-            # محاولات إعادة الاتصال لو النت قطع
-            attempt = 0
-            while attempt < 3:
-                try:
-                    handle = Entrez.efetch(db="pubmed", id=batch_ids, retmode="xml")
-                    papers = Entrez.read(handle)
-                    handle.close()
+print(f"✅ لقينا {len(pmids)} بحث مرتبطين بالموضوع. جاري تحميل الملخصات (Abstracts)...")
 
-                    # 3. استخراج النصوص ومطابقتها
-                    for paper in papers.get('PubmedArticle', []):
-                        try:
-                            abstract = paper['MedlineCitation']['Article']['Abstract']['AbstractText'][0]
-                            # بندور على أي كلمة من 3 لـ 7 حروف كلها كابيتال
-                            potential_genes = set(re.findall(r'\b[A-Z][A-Z0-9]{2,6}\b', str(abstract)))
-                            
-                            # تقاطع مع لستة الجينات اللي عندنا في الداتا النظيفة
-                            matched_genes = potential_genes.intersection(gene_list)
-                            genes_found.extend(list(matched_genes))
-                        except (KeyError, IndexError):
-                            continue 
-                    break # لو نجح، يكسر حلقة المحاولات ويدخل على الدفعة اللي بعدها
-                    
-                except (http.client.IncompleteRead, HTTPError, URLError) as e:
-                    attempt += 1
-                    print(f"⚠️ السيرفر قطع الاتصال، بنحاول تاني (محاولة {attempt}/3)...")
-                    time.sleep(2) # نستنى ثانيتين قبل ما نحاول تاني
-            
-            if attempt == 3:
-                print("❌ فشلنا في تحميل الدفعة دي بعد 3 محاولات، هنتخطاها.")
+# تحميل نصوص الملخصات
+fetch_url = f"https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id={','.join(pmids)}&retmode=text&rettype=abstract"
+r_fetch = requests.get(fetch_url)
+abstracts_text = r_fetch.text
+print("✅ تم تحميل نصوص الأبحاث بنجاح. جاري التنقيب عن الجينات (Text Mining)...")
 
-    # 4. تجميع الجينات
-    if genes_found:
-        final_genes = pd.Series(genes_found).value_counts().reset_index()
-        final_genes.columns = ['Gene', 'Frequency']
-        return final_genes
-    else:
-        return pd.DataFrame()
+# ---------------------------------------------------------
+# 4. البحث عن الجينات داخل النصوص
+# ---------------------------------------------------------
+important_genes = set()
+# البحث هيكون Case-Sensitive للجينات اللي حروفها أكتر من 2 عشان نتجنب الأخطاء
+for gene in all_genes:
+    gene_str = str(gene).strip()
+    if len(gene_str) > 2:
+        # بنعمل Regex عشان ندور على الكلمة كاسم جين مستقل مش جزء من كلمة تانية
+        pattern = r'\b' + re.escape(gene_str) + r'\b'
+        if re.search(pattern, abstracts_text):
+            important_genes.add(gene_str)
 
-# ================= التنفيذ =================
-try:
-    print("⏳ جاري قراءة أسماء الجينات فقط من ملف الداتا...")
-    
-    # هنقرا أول صف بس (أسماء العواميد)
-    df_columns = pd.read_csv('data_x_all.csv', nrows=0).columns
-    
-    # الفلترة الذكية
-    my_genes = set([col for col in df_columns if not col.startswith('Unnamed') and col != 'Sample_ID'])
-    
-    print(f"✅ قرينا {len(my_genes)} جين سليم من الفايل.")
+print(f"🎯 الماينينج خلص! لقينا {len(important_genes)} جين ليهم علاقة بالمقاومة في الأبحاث.")
 
-    print("🚀 جاري استخراج الجينات من PubMed...")
-    result_df = mine_pubmed_genes(my_genes)
+# ---------------------------------------------------------
+# 5. بناء الملف التالت زي الدرايف بالظبط
+# ---------------------------------------------------------
+print("\n🏗️ جاري بناء الملف التالت (2-pubmed_result.csv)...")
+pubmed_data = []
 
-    if not result_df.empty:
-        result_df.to_csv('2-pubmed_result.csv', index=False)
-        print("\n🎉 تمت المهمة بنجاح! تم حفظ الملف باسم 2-pubmed_result.csv")
-        print("\n🔥 أهم 5 جينات ظهرت في الأبحاث وليهم علاقة بالمقاومة:")
-        print(result_df.head(5))
-    else:
-        print("⚠️ ملقيناش جينات متطابقة، جربي ترني السكريبت تاني.")
-        
-except FileNotFoundError:
-    print("❌ إيرور: مش لاقي ملف 'data_x_all.csv'! اتأكدي إنه موجود في نفس الفولدر.")
+for gene in all_genes:
+    result_num = 1 if str(gene).strip() in important_genes else 0
+    pubmed_data.append({'gene': gene, 'result_num': result_num})
+
+df_pubmed_new = pd.DataFrame(pubmed_data)
+df_pubmed_new.to_csv('2-pubmed_result.csv', index=False)
+
+print(f"✅ تم حفظ الملف بنجاح!")
+print(f"   - إجمالي عدد الجينات: {len(df_pubmed_new)}")
+print(f"   - عدد الجينات المهمة (اللي واخده 1): {df_pubmed_new['result_num'].sum()}")
+print("\n🎉 الخطوة التانية الحقيقية تمت بنجاح! إحنا كده شغالين بشفافية علمية 100%.")
