@@ -4,7 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { FaArrowLeft, FaCheckCircle } from "react-icons/fa";
 import { FiUpload } from "react-icons/fi";
 import { IoInformationCircleOutline } from "react-icons/io5";
-
+import { runAnalysis } from "../api/analysisApi";
 function NewAnalysis() {
   const mainFileRef = useRef(null);
   const mutationFileRef = useRef(null);
@@ -33,33 +33,44 @@ function NewAnalysis() {
       setFiles((prev) => ({ ...prev, [fileType]: selectedFile }));
     }
   };
+const handleRunAnalysis = async () => {
+  if (!cancerType || cancerType === "Select a cancer type") {
+    alert("Please select a cancer type first.");
+    return;
+  }
 
-  const handleRunAnalysis = () => {
-    if (!cancerType || cancerType === "Select a cancer type") {
-      alert("Please select a cancer type first.");
-      return;
-    }
-    if (!files.main) {
-      alert("Please upload the main Genomic Data File.");
-      return;
-    }
+  if (!files.main) {
+    alert("Please upload the main Genomic Data File.");
+    return;
+  }
 
-    setIsAnalyzing(true);
+  setIsAnalyzing(true);
 
-    setTimeout(() => {
-      setIsAnalyzing(false);
-      navigate("/results", {
-        state: {
-          cancerType: cancerType,
-          riskScore: 84,
-          status: "High Resistance Risk",
-          detectedMutations: ["TP53 (Exon 6)", "EGFR (L858R)"],
-          recommendedAction: "Consider alternative combination therapies.",
-        }
-      });
-    }, 2000);
-  };
+  try {
+    const formData = new FormData();
+    formData.append("cancerType", cancerType);
+    formData.append("mainFile", files.main);
 
+    if (files.mutation) formData.append("mutationFile", files.mutation);
+    if (files.cnv) formData.append("cnvFile", files.cnv);
+    if (files.meth) formData.append("methFile", files.meth);
+
+    const response = await runAnalysis(formData);
+
+    navigate(`/results/${response.job_id}`, {
+      state: {
+        job_id: response.job_id,
+        cancerType,
+      },
+    });
+
+  } catch (error) {
+    console.error(error);
+    alert("Analysis failed. Try again.");
+  } finally {
+    setIsAnalyzing(false);
+  }
+};
   return (
     // Changed py-5 to py-3 to reduce vertical padding on the whole page
     <div className="new-analysis-page py-3">

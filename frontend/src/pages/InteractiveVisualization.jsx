@@ -1,30 +1,48 @@
-import React from "react";
-import { Container, Card } from "react-bootstrap";
+import React, { useEffect, useState } from "react";
+import ForceGraph3D from "react-force-graph-3d";
+import { getGraphData } from "../api/graphApi";
 
-function InteractiveVisualization() {
+const GraphVisualization = ({ job_id }) => {
+  const [graphData, setGraphData] = useState({ nodes: [], links: [] });
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const data = await getGraphData(job_id);
+      setGraphData(data);
+    };
+
+    fetchData();
+  }, [job_id]);
+
   return (
-    <Container className="py-5">
-      <h2>Interactive Visualization</h2>
+    <div style={{ height: "600px", border: "1px solid #ddd", borderRadius: "10px" }}>
+      <ForceGraph3D
+        graphData={graphData}
 
-      <Card className="p-4 mt-4">
-        <h5>Pathway Network Graph</h5>
+        // 👇 لون النود
+        nodeColor={(node) => {
+          if (node.type === "pathway") return "#22c55e";
+          if (node.highlight) return "#ef4444";
+          return "#94a3b8";
+        }}
 
-        {/* Placeholder for Graph */}
-        <div
-          style={{
-            height: "400px",
-            background: "#eef2f7",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRadius: "10px"
-          }}
-        >
-          Graph Visualization Placeholder
-        </div>
-      </Card>
-    </Container>
+        // 👇 حجم النود
+        nodeVal={(node) => {
+          if (node.type === "pathway") return 10;
+          if (node.highlight) return 8;
+          return 4;
+        }}
+
+        // 👇 اسم النود
+        nodeLabel="id"
+
+        // 👇 لما تدوسي
+        onNodeClick={(node) => {
+          console.log(node);
+        }}
+      />
+    </div>
   );
-}
+};
 
-export default InteractiveVisualization;
+export default GraphVisualization;
