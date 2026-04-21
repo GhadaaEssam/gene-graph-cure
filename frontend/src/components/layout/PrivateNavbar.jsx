@@ -68,7 +68,7 @@ function PrivateNavbar() {
                 <FaRegFileLines /> New Analysis
               </Nav.Link>
 
-              <Nav.Link as={Link} to="/results" className="custom-nav-link fw-medium d-flex align-items-center gap-2">
+              <Nav.Link as={Link} to="/results/:job_id" className="custom-nav-link fw-medium d-flex align-items-center gap-2">
                 <FaFileInvoice /> Results
               </Nav.Link>
 
@@ -76,13 +76,13 @@ function PrivateNavbar() {
                 <FaDiagramProject /> Visualization
               </Nav.Link>
 
-              <Nav.Link as={Link} to="/chat" className="custom-nav-link fw-medium d-flex align-items-center gap-2">
-                <FaRegMessage /> Chat Assistant
+              <Nav.Link as={Link} to="/Chat" className="custom-nav-link fw-medium d-flex align-items-center gap-2">
+                <FaRegMessage /> chat Assistant
               </Nav.Link>
 
               <div className="d-none d-lg-block" style={{ height: '24px', width: '1px', backgroundColor: '#e2e8f0' }}></div>
 
-              <Nav.Link as={Link} to="/logout" className="custom-nav-link fw-medium d-flex align-items-center gap-2">
+              <Nav.Link as={Link} to="/" className="custom-nav-link fw-medium d-flex align-items-center gap-2">
                 <FaArrowRightFromBracket /> Log Out
               </Nav.Link>
 

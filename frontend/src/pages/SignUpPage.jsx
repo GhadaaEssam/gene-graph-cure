@@ -1,10 +1,10 @@
 import React, { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { Container, Form, Button, Card, InputGroup, Alert } from "react-bootstrap";
+import { Container, Form, Button, Card, InputGroup, Alert, Spinner } from "react-bootstrap";
 import { Person, Envelope, Lock } from "react-bootstrap-icons"; 
-
-// 1. استيراد اللوجو بالشكل الصحيح في رياكت (تأكدي إن المسار ده صح بالنسبة لملف الـ SignUp)
 import logo from "../assets/logo01.png"; 
+// 1. استيراد الفانكشن الوهمية
+import { registerUser } from "../api/auth.api";
 
 function SignUpPage() {
   const navigate = useNavigate();
@@ -15,42 +15,60 @@ function SignUpPage() {
     confirmPassword: "",
   });
   
-  // 2. إضافة حالة للخطأ عشان نعرضه بشكل أشيك من الـ alert
   const [error, setError] = useState("");
+  // 2. حالة التحميل
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    setError(""); // مسح الخطأ بمجرد ما المستخدم يبدأ يكتب تاني
+    setError(""); 
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match!");
       return;
     }
-    console.log("Account created for:", formData.fullName);
-    navigate("/new-analysis");
+
+    // 3. نبدأ عملية التسجيل
+    setIsLoading(true);
+    
+    try {
+      // بنبعت الداتا للباك إند (أو المحاكاة بتاعتنا)
+      const response = await registerUser(formData);
+      
+      // 4. لو نجحنا، بنخزن التوكن كإثبات إنه دخل
+      localStorage.setItem("userToken", response.token);
+      localStorage.setItem("userName", response.user.name);
+      
+      // 5. التوجيه للصفحة اللي بعدها
+      navigate("/new-analysis");
+      
+    } catch (err) {
+      // لو فيه خطأ (زي الإيميل متسجل قبل كده)
+      setError(err.message || "Registration failed. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
-    // استخدام calc عشان نخصم مساحة الـ Navbar التقريبية ونمنع السكرول
     <div style={{ backgroundColor: "#f8fafc", minHeight: "calc(100vh - 70px)", display: "flex", alignItems: "center", padding: "20px 0" }}>
       <Container className="d-flex flex-column align-items-center">
         
         {/* Logo and Header */}
         <div className="text-center mb-3">
-          {/* استخدام اللوجو المستورد */}
           <img src={logo} alt="GeneGraph Logo" style={{ width: "45px", marginBottom: "8px" }} />
           <h3 className="fw-bold mb-1" style={{ color: "#0f2027" }}>Create Account</h3>
           <p className="text-muted" style={{ fontSize: "0.9rem" }}>Join the research platform</p>
         </div>
 
-        {/* Form Card - تم تصغير العرض والمسافات الداخلية */}
+        {/* Form Card */}
         <Card className="shadow-sm border-0" style={{ width: "100%", maxWidth: "420px", borderRadius: "12px" }}>
           <Card.Body className="p-4">
             
-            {/* عرض رسالة الخطأ هنا */}
             {error && <Alert variant="danger" className="p-2 text-center" style={{ fontSize: "0.85rem" }}>{error}</Alert>}
 
             <Form onSubmit={handleSubmit}>
@@ -86,8 +104,13 @@ function SignUpPage() {
                 </InputGroup>
               </Form.Group>
 
-              <Button type="submit" className="w-100 fw-bold border-0" style={{ background: "linear-gradient(90deg, #2193b0, #6dd5ed)", padding: "10px", borderRadius: "8px", transition: "opacity 0.2s" }}>
-                Create Account
+              {/* 6. تغيير شكل الزرار أثناء التحميل */}
+              <Button type="submit" disabled={isLoading} className="w-100 fw-bold border-0" style={{ background: "linear-gradient(90deg, #2193b0, #6dd5ed)", padding: "10px", borderRadius: "8px", transition: "opacity 0.2s" }}>
+                {isLoading ? (
+                  <><Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" /> Creating Account...</>
+                ) : (
+                  "Create Account"
+                )}
               </Button>
             </Form>
             
@@ -98,7 +121,6 @@ function SignUpPage() {
           </Card.Body>
         </Card>
 
-        {/* Footer Text */}
         <div className="text-center mt-3 text-muted" style={{ fontSize: "0.75rem", maxWidth: "400px" }}>
           By creating an account, you agree to our Terms of Service and Privacy Policy.
         </div>

@@ -58,7 +58,7 @@ function App() {
       <Route element={<PrivateLayout />}>
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/new-analysis" element={<NewAnalysis />} />
-        <Route path="/results" element={<ResultsPage />} />
+        <Route path="/results/:job_id" element={<ResultsPage />} />
         <Route path="/chat" element={<ChatAssistantPage />} />
         <Route path="/visualization" element={<InteractiveVisualization />} />
       </Route>

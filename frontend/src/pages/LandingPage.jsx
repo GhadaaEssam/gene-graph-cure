@@ -13,8 +13,9 @@ function LandingPage() {
     <>
       <HeroSection />
       <ChallengeSection />
-            <HowItWorksSection />
-            <ExplainabilitySection />
+<section id="model">
+  <HowItWorksSection />
+</section>            <ExplainabilitySection />
       <FeaturesSection />
       <ResearchAudienceSection />
       <FooterSection />
