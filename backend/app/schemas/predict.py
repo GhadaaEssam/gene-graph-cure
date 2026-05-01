@@ -22,7 +22,7 @@ class PredictionResult(BaseModel):
     loss_L1: Union[float, List[float]]
     
     # Keeping the others as they were
-    out: List[List[float]]
+    out: List[int]
     cor: List[float]
     graph: List[List[float]]
     pw_w: List[float]

@@ -84,7 +84,7 @@ class GC_PGE_Service:
             for key, value in result.items():
                 if isinstance(value, torch.Tensor):
                     if key == "out":
-                        value = value.exp()
+                        value = value.max(dim=1).indices
                     # Detach, move to CPU, and convert to nested list
                     json_serializable_result[key] = value.detach().cpu().tolist()
                 elif isinstance(value, (np.ndarray, np.generic)):
