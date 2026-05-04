@@ -3,16 +3,31 @@ import { StyleSheet, Text, View, ScrollView, TouchableOpacity, SafeAreaView, Pla
 import { useRouter } from 'expo-router';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 
+type ResearchItemProps = {
+  title: string;
+};
+
+type TrustItemProps = {
+  icon: any;
+  title: string;
+  desc: string;
+};
+
+type WhoCardProps = {
+  icon: any;
+  title: string;
+  desc: string;
+};
+
 // Components صغيرة عشان ننظم الكود
-const ResearchItem = ({ title }) => (
-  <View style={styles.researchItem}>
+const ResearchItem = ({ title }: ResearchItemProps) => (
+    <View style={styles.researchItem}>
     <View style={styles.researchItemIndicator} />
     <Text style={styles.researchItemText}>{title}</Text>
   </View>
 );
 
-const TrustItem = ({ icon, title, desc }) => (
-  <View style={styles.trustItem}>
+const TrustItem = ({ icon, title, desc }: TrustItemProps) => (  <View style={styles.trustItem}>
     <Ionicons name={icon} size={24} color="#0ea5e9" style={styles.trustIcon} />
     <View>
       <Text style={styles.trustTitle}>{title}</Text>
@@ -21,8 +36,7 @@ const TrustItem = ({ icon, title, desc }) => (
   </View>
 );
 
-const WhoCard = ({ icon, title, desc }) => (
-  <View style={styles.whoCard}>
+const WhoCard = ({ icon, title, desc }: WhoCardProps) => (  <View style={styles.whoCard}>
     <Ionicons name={icon} size={32} color="#3b82f6" style={styles.whoIcon} />
     <View>
       <Text style={styles.whoTitle}>{title}</Text>
