@@ -57,7 +57,10 @@ class RAGService:
         
         # 3. Map indices back to gene names
         # Assuming the first column of anchor_genes_df holds the names
-        gene_names = anchor_genes_df.iloc[:, 0].tolist()
+        gene_ids = anchor_genes_df.iloc[:, 0].tolist()
+
+        # TEMP (readable)
+        gene_names = [f"Gene_{gid}" for gid in gene_ids]
         
         top_genes = []
         for idx in top_indices:

@@ -6,7 +6,7 @@ from Bio import Entrez
 
 # --- Configuration ---
 # NCBI requires an email to avoid IP bans
-Entrez.email = "cds.shahdhassan23794@alexu.edu.eg"  
+Entrez.email = "cds.alaasayed23059@alexu.edu.eg"  
 
 # Path Resolution: Automatically saves to your protected data folder
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +34,7 @@ def fetch_pubmed_data(query: str, max_papers: int) -> list:
     print(f"[*] Found {total_found} relevant papers. Starting download in batches...")
 
     papers_dataset = []
-    batch_size = 100 
+    batch_size = 50 
 
     # Step 2: Fetch the actual text for the IDs
     for i in range(0, total_found, batch_size):
