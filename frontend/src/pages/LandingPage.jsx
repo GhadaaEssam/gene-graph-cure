@@ -7,7 +7,6 @@ import FeaturesSection from "../components/landing/FeaturesSection";
 import ResearchAudienceSection from "../components/landing/ResearchAudienceSection";
 import FooterSection from "../components/landing/FooterSection";
 
-
 function LandingPage() {
   return (
     <>

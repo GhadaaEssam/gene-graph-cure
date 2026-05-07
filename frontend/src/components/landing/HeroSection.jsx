@@ -1,5 +1,6 @@
 import React from "react";
 import { Container, Button } from "react-bootstrap";
+import { Link } from "react-router-dom";
 
 function HeroSection() {
   return (
@@ -25,7 +26,10 @@ function HeroSection() {
         </p>
 
         <div className="d-flex justify-content-center gap-3">
-          <Button variant="primary" size="lg">
+          <Button
+          as={Link} to="/signup"
+          variant="primary" size="lg">
+            
             Get Started
           </Button>
 
