@@ -24,9 +24,7 @@ function MainNavbar() {
         <Navbar.Collapse>
           <Nav className="ms-auto align-items-center gap-3">
 
-            <Nav.Link as={Link} to="/model" className="text-dark fw-medium">
-              Model
-            </Nav.Link>
+            
 
             <Nav.Link as={Link} to="/impact" className="text-dark fw-medium">
               Impact
