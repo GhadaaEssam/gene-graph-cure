@@ -1,6 +1,7 @@
 import torch
 import pandas as pd
 import io
+import numpy as np
 from pathlib import Path
 import sys
 
@@ -14,6 +15,8 @@ sys.modules["model.model"] = model
 from gcpge.preprocess import preprocess_for_inference
 
 class GC_PGE_Service:
+    CORE_RESULT_LIMIT = 10
+
     def __init__(self, model_path: str):
 
         # Validate model path at initialization
@@ -22,6 +25,9 @@ class GC_PGE_Service:
 
         # Set device (GPU if available, else CPU)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.pathway_id_labels = self._load_pathway_id_labels(
+            PROJECT_ROOT / "gcpge" / "pw_id.csv"
+        )
 
         # Load model once
         self.model = torch.load(
@@ -48,11 +54,22 @@ class GC_PGE_Service:
         processed_data["geo_features"] = data_sample.iloc[:, 1:] 
 
         # Characteristic genes (Anchor list)
-        processed_data["anchor_genes"] = pd.read_csv(io.BytesIO(contents["anchor_genes"]), header=0)
+        anchor_genes = pd.read_csv(io.BytesIO(contents["anchor_genes"]), header=0)
+        processed_data["anchor_genes"] = anchor_genes
 
         # Signal path network (data_x): First col is ID, rest is data
         data_x_raw = pd.read_csv(io.BytesIO(contents["node_features"]), header=0)
         processed_data["node_features"] = data_x_raw.iloc[:, 1:]
+        processed_data["_node_names"] = data_x_raw.iloc[:, 0].astype(str).tolist()
+        processed_data["_pathway_names"] = self._resolve_pathway_names(
+            [str(column) for column in data_x_raw.columns[1:]]
+        )
+        if "result_num" in anchor_genes.columns:
+            processed_data["_anchor_indices"] = set(
+                int(index) for index in anchor_genes.index[anchor_genes["result_num"] == 1]
+            )
+        else:
+            processed_data["_anchor_indices"] = set()
 
         # PPI network
         processed_data["ppi_edges"] = pd.read_csv(io.BytesIO(contents["ppi_edges"]), header=0)
@@ -94,4 +111,82 @@ class GC_PGE_Service:
                     # Keep native Python types (ints, floats, lists) as is
                     json_serializable_result[key] = value
 
+            self._add_structured_core_results(json_serializable_result, raw_input)
             return json_serializable_result
+
+    def _add_structured_core_results(self, result: dict, raw_input: dict) -> None:
+        node_names = raw_input.get("_node_names", [])
+        pathway_names = raw_input.get("_pathway_names", [])
+        anchor_indices = raw_input.get("_anchor_indices", set())
+
+        gene_scores = self._flatten_numeric_values(result.get("vimp_g"))
+        gene_correlations = self._flatten_numeric_values(result.get("cor"))
+        structured_core_genes = []
+        for index in self._top_indices(gene_scores):
+            structured_core_genes.append({
+                "index": index,
+                "name": self._label_at(node_names, index, f"gene_{index}"),
+                "score": float(gene_scores[index]),
+                "correlation": (
+                    float(gene_correlations[index])
+                    if index < len(gene_correlations)
+                    else None
+                ),
+                "is_anchor": index in anchor_indices,
+            })
+
+        pathway_weights = self._flatten_numeric_values(result.get("pw_w"))
+        structured_core_pathways = []
+        for index in self._top_indices(pathway_weights):
+            structured_core_pathways.append({
+                "index": index,
+                "name": self._label_at(pathway_names, index, f"pathway_{index}"),
+                "weight": float(pathway_weights[index]),
+            })
+
+        result["structured_core_genes"] = structured_core_genes
+        result["structured_core_pathways"] = structured_core_pathways
+        result["core_genes"] = [gene["name"] for gene in structured_core_genes]
+        result["core_pathways"] = [pathway["name"] for pathway in structured_core_pathways]
+
+    @classmethod
+    def _top_indices(cls, values: list[float]) -> list[int]:
+        if not values:
+            return []
+        return sorted(
+            range(len(values)),
+            key=lambda index: values[index],
+            reverse=True
+        )[:cls.CORE_RESULT_LIMIT]
+
+    @staticmethod
+    def _flatten_numeric_values(value) -> list[float]:
+        if value is None:
+            return []
+        array = np.asarray(value, dtype=float).reshape(-1)
+        return array.tolist()
+
+    @staticmethod
+    def _label_at(labels: list[str], index: int, fallback: str) -> str:
+        if index < len(labels) and labels[index]:
+            return labels[index]
+        return fallback
+
+    @staticmethod
+    def _load_pathway_id_labels(path: Path) -> list[str]:
+        if not path.exists():
+            return []
+
+        pathway_ids = pd.read_csv(path)
+        if not {"id", "pwid"}.issubset(pathway_ids.columns):
+            return []
+
+        labels = [""] * (int(pathway_ids["id"].max()) + 1)
+        for _, row in pathway_ids.iterrows():
+            labels[int(row["id"])] = str(row["pwid"])
+        return labels
+
+    def _resolve_pathway_names(self, uploaded_names: list[str]) -> list[str]:
+        if len(self.pathway_id_labels) >= len(uploaded_names):
+            return self.pathway_id_labels[:len(uploaded_names)]
+        return uploaded_names
