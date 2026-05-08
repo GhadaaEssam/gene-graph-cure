@@ -56,11 +56,15 @@ class GC_PGE_Service:
         # Characteristic genes (Anchor list)
         anchor_genes = pd.read_csv(io.BytesIO(contents["anchor_genes"]), header=0)
         processed_data["anchor_genes"] = anchor_genes
+        processed_data["_anchor_gene_names"] = self._extract_gene_names(anchor_genes)
 
         # Signal path network (data_x): First col is ID, rest is data
         data_x_raw = pd.read_csv(io.BytesIO(contents["node_features"]), header=0)
         processed_data["node_features"] = data_x_raw.iloc[:, 1:]
-        processed_data["_node_names"] = data_x_raw.iloc[:, 0].astype(str).tolist()
+        processed_data["_node_names"] = self._merge_preferred_labels(
+            processed_data["_anchor_gene_names"],
+            data_x_raw.iloc[:, 0].astype(str).tolist()
+        )
         processed_data["_pathway_names"] = self._resolve_pathway_names(
             [str(column) for column in data_x_raw.columns[1:]]
         )
@@ -171,6 +175,65 @@ class GC_PGE_Service:
         if index < len(labels) and labels[index]:
             return labels[index]
         return fallback
+
+    @classmethod
+    def _extract_gene_names(cls, anchor_genes: pd.DataFrame) -> list[str]:
+        if anchor_genes.empty:
+            return []
+
+        preferred_columns = {
+            "gene",
+            "genes",
+            "gene_name",
+            "genename",
+            "gene_symbol",
+            "genesymbol",
+            "symbol",
+            "name",
+        }
+        candidate_columns = sorted(
+            anchor_genes.columns,
+            key=lambda column: (
+                cls._normalized_column_name(column) not in preferred_columns,
+                list(anchor_genes.columns).index(column),
+            )
+        )
+
+        for column in candidate_columns:
+            normalized_column = cls._normalized_column_name(column)
+            if normalized_column == "result_num":
+                continue
+
+            values = anchor_genes[column].fillna("").astype(str).str.strip()
+            if not cls._looks_like_numeric_ids(values):
+                return values.tolist()
+
+        return []
+
+    @staticmethod
+    def _merge_preferred_labels(
+        preferred_labels: list[str],
+        fallback_labels: list[str]
+    ) -> list[str]:
+        label_count = max(len(preferred_labels), len(fallback_labels))
+        labels = []
+        for index in range(label_count):
+            preferred = preferred_labels[index] if index < len(preferred_labels) else ""
+            fallback = fallback_labels[index] if index < len(fallback_labels) else ""
+            labels.append(preferred or fallback)
+        return labels
+
+    @staticmethod
+    def _normalized_column_name(column: str) -> str:
+        return str(column).strip().lower().replace(" ", "_").replace("-", "_")
+
+    @staticmethod
+    def _looks_like_numeric_ids(values: pd.Series) -> bool:
+        non_empty_values = values[values != ""]
+        if non_empty_values.empty:
+            return True
+        numeric_ratio = pd.to_numeric(non_empty_values, errors="coerce").notna().mean()
+        return numeric_ratio >= 0.95
 
     @staticmethod
     def _load_pathway_id_labels(path: Path) -> list[str]:
