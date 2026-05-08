@@ -7,6 +7,11 @@ class CancerType(str, Enum):
     breast = "breast"
     colon = "colon"
 
+class ModelKey(str, Enum):
+    liver = "liver"
+    ovarian = "ovarian"
+    immunotherapy = "immunotherapy"
+
 class PredictionRequest(BaseModel):
     node_features:  List[List[float]]
     ppi_edges:      List[List[int]]
