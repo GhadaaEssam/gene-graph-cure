@@ -16,6 +16,12 @@ from gcpge.preprocess import preprocess_for_inference
 
 class GC_PGE_Service:
     CORE_RESULT_LIMIT = 10
+    STATIC_INPUT_FILENAMES = {
+        "anchor_genes": "anchor_genes.csv",
+        "node_features": "node_features.csv",
+        "ppi_edges": "ppi_edges.csv",
+        "homolog_edges": "homolog_edges.csv",
+    }
 
     def __init__(self, model_path: str):
 
@@ -44,22 +50,77 @@ class GC_PGE_Service:
         """
         Mirrors the original research model's data handling logic.
         """
-        processed_data = {}
-        
-        # 1. Read the files from the streams
         contents = {key: await f.read() for key, f in files_dict.items()}
-        
-        # Sample expression matrix: First col is name, rest is data
         data_sample = pd.read_csv(io.BytesIO(contents["geo_features"]), header=0)
-        processed_data["geo_features"] = data_sample.iloc[:, 1:] 
+        anchor_genes = pd.read_csv(io.BytesIO(contents["anchor_genes"]), header=0)
+        data_x_raw = pd.read_csv(io.BytesIO(contents["node_features"]), header=0)
+        ppi_edges = pd.read_csv(io.BytesIO(contents["ppi_edges"]), header=0)
+        homolog_edges = pd.read_csv(io.BytesIO(contents["homolog_edges"]), header=0)
+
+        processed_data = self._prepare_input_data(
+            data_sample=data_sample,
+            anchor_genes=anchor_genes,
+            data_x_raw=data_x_raw,
+            ppi_edges=ppi_edges,
+            homolog_edges=homolog_edges,
+        )
+
+        return self.predict(processed_data)
+
+    async def predict_from_geo_file(self, geo_features, static_inputs_dir: Path):
+        """
+        Runs prediction with patient-specific GEO features and static model inputs
+        stored on disk for the selected model.
+        """
+        self._validate_static_inputs(static_inputs_dir)
+
+        geo_contents = await geo_features.read()
+        data_sample = pd.read_csv(io.BytesIO(geo_contents), header=0)
+        anchor_genes = pd.read_csv(
+            static_inputs_dir / self.STATIC_INPUT_FILENAMES["anchor_genes"],
+            header=0,
+        )
+        data_x_raw = pd.read_csv(
+            static_inputs_dir / self.STATIC_INPUT_FILENAMES["node_features"],
+            header=0,
+        )
+        ppi_edges = pd.read_csv(
+            static_inputs_dir / self.STATIC_INPUT_FILENAMES["ppi_edges"],
+            header=0,
+        )
+        homolog_edges = pd.read_csv(
+            static_inputs_dir / self.STATIC_INPUT_FILENAMES["homolog_edges"],
+            header=0,
+        )
+
+        processed_data = self._prepare_input_data(
+            data_sample=data_sample,
+            anchor_genes=anchor_genes,
+            data_x_raw=data_x_raw,
+            ppi_edges=ppi_edges,
+            homolog_edges=homolog_edges,
+        )
+
+        return self.predict(processed_data)
+
+    def _prepare_input_data(
+        self,
+        data_sample: pd.DataFrame,
+        anchor_genes: pd.DataFrame,
+        data_x_raw: pd.DataFrame,
+        ppi_edges: pd.DataFrame,
+        homolog_edges: pd.DataFrame,
+    ) -> dict:
+        processed_data = {}
+
+        # Sample expression matrix: First col is name, rest is data
+        processed_data["geo_features"] = data_sample.iloc[:, 1:]
 
         # Characteristic genes (Anchor list)
-        anchor_genes = pd.read_csv(io.BytesIO(contents["anchor_genes"]), header=0)
         processed_data["anchor_genes"] = anchor_genes
         processed_data["_anchor_gene_names"] = self._extract_gene_names(anchor_genes)
 
         # Signal path network (data_x): First col is ID, rest is data
-        data_x_raw = pd.read_csv(io.BytesIO(contents["node_features"]), header=0)
         processed_data["node_features"] = data_x_raw.iloc[:, 1:]
         processed_data["_node_names"] = self._merge_preferred_labels(
             processed_data["_anchor_gene_names"],
@@ -75,14 +136,23 @@ class GC_PGE_Service:
         else:
             processed_data["_anchor_indices"] = set()
 
-        # PPI network
-        processed_data["ppi_edges"] = pd.read_csv(io.BytesIO(contents["ppi_edges"]), header=0)
+        processed_data["ppi_edges"] = ppi_edges
+        processed_data["homolog_edges"] = homolog_edges
 
-        # Same origin network (Homolog)
-        processed_data["homolog_edges"] = pd.read_csv(io.BytesIO(contents["homolog_edges"]), header=0)
+        return processed_data
 
-        # 2. Call the prediction logic with the correctly sliced DataFrames
-        return self.predict(processed_data)
+    @classmethod
+    def _validate_static_inputs(cls, static_inputs_dir: Path) -> None:
+        missing_files = [
+            filename
+            for filename in cls.STATIC_INPUT_FILENAMES.values()
+            if not (static_inputs_dir / filename).exists()
+        ]
+        if missing_files:
+            raise FileNotFoundError(
+                f"Missing static model input files in {static_inputs_dir}: "
+                f"{', '.join(missing_files)}"
+            )
 
     def predict(self, raw_input: dict):
         """
