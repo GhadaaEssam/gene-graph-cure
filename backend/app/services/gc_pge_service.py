@@ -46,27 +46,6 @@ class GC_PGE_Service:
         self.model.to(self.device)
         self.model.eval()
 
-    async def predict_from_files(self, files_dict: dict):
-        """
-        Mirrors the original research model's data handling logic.
-        """
-        contents = {key: await f.read() for key, f in files_dict.items()}
-        data_sample = pd.read_csv(io.BytesIO(contents["geo_features"]), header=0)
-        anchor_genes = pd.read_csv(io.BytesIO(contents["anchor_genes"]), header=0)
-        data_x_raw = pd.read_csv(io.BytesIO(contents["node_features"]), header=0)
-        ppi_edges = pd.read_csv(io.BytesIO(contents["ppi_edges"]), header=0)
-        homolog_edges = pd.read_csv(io.BytesIO(contents["homolog_edges"]), header=0)
-
-        processed_data = self._prepare_input_data(
-            data_sample=data_sample,
-            anchor_genes=anchor_genes,
-            data_x_raw=data_x_raw,
-            ppi_edges=ppi_edges,
-            homolog_edges=homolog_edges,
-        )
-
-        return self.predict(processed_data)
-
     async def predict_from_geo_file(self, geo_features, static_inputs_dir: Path):
         """
         Runs prediction with patient-specific GEO features and static model inputs

@@ -2,22 +2,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from typing import List, Optional, Union
 from enum import Enum
 
-class CancerType(str, Enum):
-    lung = "lung"
-    breast = "breast"
-    colon = "colon"
-
 class ModelKey(str, Enum):
     liver = "liver"
     ovarian = "ovarian"
     immunotherapy = "immunotherapy"
-
-class PredictionRequest(BaseModel):
-    node_features:  List[List[float]]
-    ppi_edges:      List[List[int]]
-    homolog_edges:  List[List[int]]
-    geo_features:   List[List[float]]
-    anchor_genes: List[str]
 
 class CoreGene(BaseModel):
     index: int
