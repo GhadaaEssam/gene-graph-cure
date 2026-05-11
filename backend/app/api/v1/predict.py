@@ -1,8 +1,7 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile
-from app.schemas.predict import PredictionResult
-from app.services.gc_pge_service import GC_PGE_Service
+from fastapi import APIRouter, HTTPException, File, Form, UploadFile
+from app.schemas.predict import ModelKey, PredictionResult
+from app.services.model_service_registry import ModelServiceRegistry
 from pathlib import Path
-import os
 import logging
 
 # Set up logging
@@ -13,54 +12,47 @@ router = APIRouter()
 
 # Project root setup
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
+WEIGHTS_DIR = PROJECT_ROOT / "weights"
+MODEL_INPUTS_DIR = PROJECT_ROOT / "model_inputs"
 
-# Model path setup
-model_path = os.environ.get(
-    "MODEL_PATH",
-    str(PROJECT_ROOT / "weights" / "liver_model.pt")
+# Lazy-load services as each model is requested.
+model_registry = ModelServiceRegistry(
+    weights_dir=WEIGHTS_DIR,
+    model_inputs_dir=MODEL_INPUTS_DIR,
+    model_files={
+        "liver": "liver_model.pt",
+        "ovarian": "ovarian_model.pt",
+        "immunotherapy": "immunotherapy_model.pt",
+    },
 )
-
-# Validate model file exists at startup
-if not Path(model_path).exists():
-    raise RuntimeError(f"Model weights not found at startup: {model_path}")
-
-# Initialize Service once
-try:
-    gc_pge_service = GC_PGE_Service(model_path)
-    logger.info(f"Model loaded successfully from: {model_path}")
-except Exception as e:
-    raise RuntimeError(f"Failed to initialize GC_PGE_Service: {e}")
 
 @router.post("/predict", response_model=PredictionResult)
 async def predict(
     geo_features: UploadFile = File(...),
-    anchor_genes: UploadFile = File(...),
-    node_features: UploadFile = File(...),
-    ppi_edges: UploadFile = File(...),
-    homolog_edges: UploadFile = File(...)
+    model: ModelKey = Form(...),
 ):
     """
-    Run GC-PGE model inference using multipart file uploads.
+    Run GC-PGE model inference using patient GEO features and static model inputs.
     """
     try:
-        # We pass the file objects directly to the service
-        # The service will call .read() and use pd.read_csv()
-        raw_files = {
-            "geo_features": geo_features,
-            "anchor_genes": anchor_genes,
-            "node_features": node_features,
-            "ppi_edges": ppi_edges,
-            "homolog_edges": homolog_edges
-        }
+        service = model_registry.get_service(model.value)
+        static_inputs_dir = model_registry.get_static_inputs_dir(model.value)
+        logger.info("Running prediction with model: %s", model)
 
-        # The service will handle reading the files, preprocessing, and prediction
-        result = await gc_pge_service.predict_from_files(raw_files)
+        result = await service.predict_from_geo_file(
+            geo_features=geo_features,
+            static_inputs_dir=static_inputs_dir,
+        )
 
         return result
 
     except ValueError as e:
         logger.warning(f"Validation error: {e}")
         raise HTTPException(status_code=422, detail=str(e))
+
+    except FileNotFoundError as e:
+        logger.error(f"Model configuration error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
     except RuntimeError as e:
         logger.error(f"Inference failure: {e}")
