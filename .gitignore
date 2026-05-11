@@ -1,0 +1,4 @@
+backend/adrs/data/full_database.xml
+**/__pycache__/
+*.pyc
+.env

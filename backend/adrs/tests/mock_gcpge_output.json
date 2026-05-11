@@ -1,0 +1,12 @@
+{
+  "patient_id": "test_patient_001",
+  "resistant_drug": "Erlotinib",
+  "delta_e": {
+    "EGFR signaling": 0.82,
+    "PI3K/MTOR signaling": 0.61,
+    "ERK MAPK signaling": 0.45,
+    "Cell cycle": 0.30,
+    "Apoptosis regulation": 0.20
+  },
+  "core_genes": ["EGFR", "KRAS", "TP53", "PIK3CA"]
+}
