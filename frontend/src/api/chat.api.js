@@ -1,39 +1,34 @@
-// ==========================
-// 🔹 MOCK CHAT (دلوقتي)
-// ==========================
+// src/api/chat.api.js
+
+const BASE_URL = "http://127.0.0.1:8000/chat"; // تأكدي من تطابق المسار مع ملف الـ main.py
 
 export const sendChatMessage = async (message, job_id = null) => {
-  return new Promise((resolve) => {
-    // محاكاة تأخير الرد
-    setTimeout(() => {
-      const lowerQ = message.toLowerCase();
+  try {
+    const response = await fetch(`${BASE_URL}/send`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ 
+        message: message, 
+        job_id: job_id 
+      }),
+    });
 
-      let reply =
-        "That's a great question. Based on the uploaded genomic data, I am analyzing the specific pathways involved. Could you specify which treatment alternative you are most interested in exploring?";
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.detail || "Failed to get response from AI");
+    }
 
-      // 👇 رد ذكي لو السؤال عن المقاومة
-      if (
-        lowerQ.includes("resistant") ||
-        lowerQ.includes("resistance")
-      ) {
-        reply = `Based on the genomic analysis, the patient shows resistance due to several key factors:
-
-**1. MAPK/ERK Pathway Activation**: The analysis detected high activation (87%) of the MAPK/ERK signaling pathway, which is a common bypass mechanism in drug resistance. Mutations in KRAS and BRAF genes are driving this activation.
-
-**2. PI3K/AKT Pathway Alterations**: Secondary resistance mechanisms involve the PI3K/AKT pathway (72% impact score), with mutations in PIK3CA contributing to survival signaling independent of the drug target.
-
-**3. DNA Repair Mechanisms**: Enhanced DNA damage response pathways (65% impact) allow cancer cells to survive drug-induced stress.
-
-These combined mechanisms create multiple escape routes for cancer cells, leading to the predicted resistance profile.`;
-      }
-
-      resolve({
-        reply,
-        timestamp: new Date().toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        }),
-      });
-    }, 1500);
-  });
-};
+    // الباك إند هيرجع { "reply": "...", "timestamp": "..." }
+    return await response.json();
+    
+  } catch (error) {
+    console.error("API Chat Error:", error);
+    // ممكن نرجع رد افتراضي في حالة فشل الاتصال بالسيرفر تماماً
+    return {
+      reply: "I'm having trouble connecting to my brain (server). Please try again later.",
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+  }
+}; 

@@ -154,7 +154,6 @@ function Results() {
         {/* TITLE */}
         <div className="mb-4">
           <h3 className="fw-bold">Analysis Results</h3>
-          <p className="text-muted">Job ID: {job_id}</p>
         </div>
 
         {/* MAIN CARD */}

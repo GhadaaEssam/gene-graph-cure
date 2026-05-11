@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Container,
   Row,
@@ -16,9 +17,10 @@ import {
 } from "../api/dashboardApi";
 
 function Dashboard() {
-  const [summary, setSummary] = useState(null);
+  const [summary, setSummary] = useState({});;
   const [recentAnalyses, setRecentAnalyses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchDashboard = async () => {
@@ -54,7 +56,8 @@ function Dashboard() {
     <Container className="py-5">
       {/* 1. Header Section */}
       <div className="mb-4">
-        <h2>Welcome back, Dr. Smith</h2>
+      
+        <h2>Welcome, Dr. {summary?.doctorName || "User"}</h2> 
         <p className="text-muted">
           Here's an overview of your recent activity and analyses
         </p>
@@ -173,7 +176,7 @@ function Dashboard() {
                 </td>
 
                 <td>
-                  <Button variant="link" className="text-dark fw-bold p-0">
+                  <Button variant="link" className="text-dark fw-bold p-0" onClick={() => navigate(`/results/${item.id}`)}>
                     View
                   </Button>
                 </td>

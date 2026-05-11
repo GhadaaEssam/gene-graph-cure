@@ -1,44 +1,30 @@
 // src/api/analysisApi.js
-
-// ==========================
-// 🔹 MOCK BACKEND (دلوقتي)
-// ==========================
-
-const mockDelay = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
-
-// 1️⃣ Start analysis (New Analysis Page)
-export const runAnalysis = async (formData) => {
-  await mockDelay(1500);
-
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("userToken");
   return {
-    job_id: "job_" + Math.floor(Math.random() * 10000),
-    status: "queued",
+    "Authorization": `Bearer ${token}`
   };
 };
+// 1️⃣ Start analysis
+export const runAnalysis = async (formData) => {
+  const response = await fetch("http://localhost:8000/analysis/run", {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: formData,
+  });
 
-// 2️⃣ Get analysis result (Results Page)
+  const data = await response.json();
+  return data;
+};
+
+// 2️⃣ Get analysis result
 export const getAnalysisResult = async (job_id) => {
-  await mockDelay(1500);
+  const response = await fetch(
+    `http://localhost:8000/analyses/${job_id}`, {
+    headers: getAuthHeaders(), 
+  
+});
 
-  return {
-    job_id,
-    cancerType: "Breast Cancer",
-    riskScore: 84,
-    pathways: [
-      {
-        name: "MAPK/ERK Signaling",
-        impact: 87,
-        genes: ["KRAS", "BRAF", "MEK1"],
-      },
-      {
-        name: "PI3K/AKT Pathway",
-        impact: 72,
-        genes: ["PIK3CA", "AKT1", "PTEN"],
-      },
-    ],
-    interpretation:
-      "This is a simulated result. Backend is not connected yet.",
-    alternatives: ["Trametinib", "Cobimetinib", "Everolimus"],
-  };
+  const data = await response.json();
+  return data;
 };

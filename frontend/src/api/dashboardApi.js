@@ -1,66 +1,64 @@
-// ==========================
-// 🔹 MOCK DASHBOARD API
-// ==========================
+// src/api/dashboardApi.js
 
-const mockDelay = (ms) =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+const BASE_URL = "http://127.0.0.1:8000/dashboard";
+
+/**
+ * دالة مساعدة لجلب التوكن من التخزين المحلي
+ */
+const getAuthHeaders = () => {
+  const token = localStorage.getItem("userToken"); // تأكدي إن الاسم هنا هو نفس اللي بتسيفيه وقت اللوج إن
+  return {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${token}`, // ده السطر اللي ناقص!
+  };
+};
 
 /**
  * 1️⃣ Dashboard Summary Stats
  */
 export const getDashboardSummary = async () => {
-  await mockDelay(1000);
-
-  return {
-    totalAnalyses: 127,
-    resistant: 57,
-    sensitive: 70,
-    topPathway: "MAPK/ERK",
-    topPathwayCount: 28,
-  };
+  try {
+    const response = await fetch(`${BASE_URL}/summary`, {
+      method: "GET",
+      headers: getAuthHeaders(), // بنبعت الهيدرز اللي فيها التوكن
+    });
+    
+    if (!response.ok) {
+        // لو التوكن منتهي أو مش موجود، هيرجع 401
+        throw new Error(`Error: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Dashboard Summary Error:", error);
+    return {
+      doctorName: "Doctor",
+      totalAnalyses: 0,
+      resistant: 0,
+      sensitive: 0,
+      topPathway: "N/A",
+      topPathwayCount: 0,
+    };
+  }
 };
 
 /**
  * 2️⃣ Recent Analyses Table
  */
 export const getRecentAnalyses = async () => {
-  await mockDelay(1000);
-
-  return [
-    {
-      id: "P-001",
-      drug: "Osimertinib",
-      prediction: "Resistant",
-      confidence: 89,
-      date: "2024-12-18",
-    },
-    {
-      id: "P-002",
-      drug: "Gefitinib",
-      prediction: "Sensitive",
-      confidence: 92,
-      date: "2024-12-17",
-    },
-    {
-      id: "P-003",
-      drug: "Erlotinib",
-      prediction: "Resistant",
-      confidence: 76,
-      date: "2024-12-16",
-    },
-    {
-      id: "P-004",
-      drug: "Afatinib",
-      prediction: "Sensitive",
-      confidence: 88,
-      date: "2024-12-15",
-    },
-    {
-      id: "P-005",
-      drug: "Crizotinib",
-      prediction: "Resistant",
-      confidence: 81,
-      date: "2024-12-14",
-    },
-  ];
+  try {
+    const response = await fetch(`${BASE_URL}/recent`, {
+      method: "GET",
+      headers: getAuthHeaders(),
+    });
+    
+    if (!response.ok) {
+        throw new Error(`Error: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error("Recent Analyses Error:", error);
+    return []; 
+  }
 };
