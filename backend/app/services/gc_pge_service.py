@@ -12,6 +12,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "gcpge"))
 import model
 sys.modules["model.model"] = model  
 
+from app.services.gene_expression_aligner import GeneExpressionAligner
 from gcpge.preprocess import preprocess_for_inference
 
 class GC_PGE_Service:
@@ -21,18 +22,29 @@ class GC_PGE_Service:
         "node_features": "node_features.csv",
         "ppi_edges": "ppi_edges.csv",
         "homolog_edges": "homolog_edges.csv",
+        "expected_geo_genes": "expected_geo_genes.csv",
+        "geo_gene_medians": "geo_gene_medians.csv",
     }
 
-    def __init__(self, model_path: str):
+    def __init__(self, model_path: str, static_inputs_dir: Path):
 
         # Validate model path at initialization
         if not Path(model_path).exists():
             raise FileNotFoundError(f"Model weights not found at: {model_path}")
+        self._validate_static_inputs(static_inputs_dir)
 
         # Set device (GPU if available, else CPU)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.pathway_id_labels = self._load_pathway_id_labels(
             PROJECT_ROOT / "gcpge" / "pw_id.csv"
+        )
+        self.gene_aligner = GeneExpressionAligner(
+            expected_genes_path=(
+                static_inputs_dir / self.STATIC_INPUT_FILENAMES["expected_geo_genes"]
+            ),
+            medians_path=(
+                static_inputs_dir / self.STATIC_INPUT_FILENAMES["geo_gene_medians"]
+            ),
         )
 
         # Load model once
@@ -92,8 +104,9 @@ class GC_PGE_Service:
     ) -> dict:
         processed_data = {}
 
-        # Sample expression matrix: First col is name, rest is data
-        processed_data["geo_features"] = data_sample.iloc[:, 1:]
+        aligned_geo, alignment_report = self.gene_aligner.align(data_sample)
+        processed_data["geo_features"] = aligned_geo
+        processed_data["_input_alignment"] = alignment_report
 
         # Characteristic genes (Anchor list)
         processed_data["anchor_genes"] = anchor_genes
@@ -165,6 +178,10 @@ class GC_PGE_Service:
                     json_serializable_result[key] = value
 
             self._add_structured_core_results(json_serializable_result, raw_input)
+            if "_input_alignment" in raw_input:
+                json_serializable_result["input_alignment"] = raw_input[
+                    "_input_alignment"
+                ]
             return json_serializable_result
 
     def _add_structured_core_results(self, result: dict, raw_input: dict) -> None:
