@@ -8,7 +8,4 @@ __pycache__/
 *.pt
 *.pth
 D:\uni\Grad project\Predicting drug resistance\gene-graph-cure\dummy_input.json
-backend/model_inputs/**
-!backend/model_inputs/*/
-!backend/model_inputs/*/expected_geo_genes.csv
-!backend/model_inputs/*/geo_gene_medians.csv
+backend/model_inputs/
