@@ -2,3 +2,6 @@ backend/adrs/data/full_database.xml
 **/__pycache__/
 *.pyc
 .env
+backend/model_inputs/
+backend/weights/
+myenv/
