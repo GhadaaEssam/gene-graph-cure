@@ -1,9 +1,9 @@
 import logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-from backend.adrs.graph_builder import load_graph_from_indexes, get_drug_neighbors, query_candidates
-from backend.adrs.normalizer import normalize_delta_e
-from backend.adrs.pathway_mapper import get_standard_pathways
+from backend.adrs_old.graph_builder import load_graph_from_indexes, get_drug_neighbors, query_candidates
+from backend.adrs_old.normalizer import normalize_delta_e
+from backend.adrs_old.pathway_mapper import get_standard_pathways
 import json
 
 print("Building graph (takes ~30 seconds)...")

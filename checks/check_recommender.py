@@ -1,9 +1,9 @@
 import logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-from backend.adrs.graph_builder import load_graph_from_indexes
-from backend.adrs.db_parser import load_gdsc_index
-from backend.adrs.recommender import rank_drugs
+from backend.adrs_old.graph_builder import load_graph_from_indexes
+from backend.adrs_old.db_parser import load_gdsc_index
+from backend.adrs_old.recommender import rank_drugs
 import json
 
 print("Loading graph and indexes...")

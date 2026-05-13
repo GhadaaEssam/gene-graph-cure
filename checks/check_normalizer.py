@@ -1,4 +1,4 @@
-from backend.adrs.normalizer import normalize_delta_e
+from backend.adrs_old.normalizer import normalize_delta_e
 
 result = normalize_delta_e({'EGFR_signaling': 0.82, 'PI3K_AKT': 0.61, 'MAPK': 0.45, 'Apoptosis': 0.20})
 print('Test 1 - normal:', result)

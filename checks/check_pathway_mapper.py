@@ -1,5 +1,5 @@
-from backend.adrs.normalizer import normalize_delta_e
-from backend.adrs.pathway_mapper import get_standard_pathways, extract_dysregulated_pathways
+from backend.adrs_old.normalizer import normalize_delta_e
+from backend.adrs_old.pathway_mapper import get_standard_pathways, extract_dysregulated_pathways
 import json
 
 # Load mock input

@@ -1,4 +1,4 @@
-from backend.adrs.models import ADRSRequest, ADRSResponse, DrugRecommendation, ErrorResponse
+from backend.adrs_old.models import ADRSRequest, ADRSResponse, DrugRecommendation, ErrorResponse
 from datetime import datetime
 
 # Test 1 — valid request

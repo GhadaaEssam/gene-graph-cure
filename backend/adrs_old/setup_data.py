@@ -11,7 +11,7 @@ from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-from backend.adrs.db_parser import parse_gdsc, save_gdsc_index
+from backend.adrs_old.db_parser import parse_gdsc, save_gdsc_index
 
 # ── Paths ─────────────────────────────────────────────────────────
 DATA_DIR    = Path("backend/adrs/data")
@@ -34,7 +34,7 @@ def run():
     drugbank_xml = DATA_DIR / "full_database.xml"
     if drugbank_xml.exists():
         print("\n── Parsing DrugBank XML ───────────────────────────────")
-        from backend.adrs.db_parser import parse_drugbank, save_drugbank_index
+        from backend.adrs_old.db_parser import parse_drugbank, save_drugbank_index
         db = parse_drugbank(str(drugbank_xml))
         save_drugbank_index(db, str(DATA_DIR / "drugbank_index.json"))
         print(f"✓ DrugBank drugs indexed: {len(db)}")

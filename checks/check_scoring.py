@@ -1,16 +1,16 @@
 import logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-from backend.adrs.graph_builder import load_graph_from_indexes, query_candidates
-from backend.adrs.normalizer import normalize_delta_e
-from backend.adrs.pathway_mapper import get_standard_pathways
-from backend.adrs.scoring import (
+from backend.adrs_old.graph_builder import load_graph_from_indexes, query_candidates
+from backend.adrs_old.normalizer import normalize_delta_e
+from backend.adrs_old.pathway_mapper import get_standard_pathways
+from backend.adrs_old.scoring import (
     compute_reversal_score,
     compute_pathway_coverage,
     compute_gene_overlap,
     compute_sd_score
 )
-from backend.adrs.db_parser import load_gdsc_index
+from backend.adrs_old.db_parser import load_gdsc_index
 import json
 
 # ── Load everything ───────────────────────────────────────────────

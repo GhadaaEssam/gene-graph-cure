@@ -4,11 +4,11 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from backend.adrs.models import (
+from backend.adrs_old.models import (
     ADRSRequest, ADRSResponse,
     ResponseMeta, LLMContextPacket, DrugRecommendation
 )
-from backend.adrs.recommender import rank_drugs
+from backend.adrs_old.recommender import rank_drugs
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,7 @@ async def recommend(request: Request, body: ADRSRequest):
     # ── STEP 1: Check cache ───────────────────────────────────────
     if _SessionFactory is not None:
         try:
-            from backend.adrs.cache import get_cached_result
+            from backend.adrs_old.cache import get_cached_result
             with _SessionFactory() as session:
                 cached = get_cached_result(
                     body.patient_id,
@@ -109,7 +109,7 @@ async def recommend(request: Request, body: ADRSRequest):
     # ── STEP 4: Save to DB cache ──────────────────────────────────
     if _SessionFactory is not None:
         try:
-            from backend.adrs.cache import save_recommendations
+            from backend.adrs_old.cache import save_recommendations
             with _SessionFactory() as session:
                 save_recommendations(
                     body.patient_id,

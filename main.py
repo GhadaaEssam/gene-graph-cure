@@ -46,8 +46,8 @@ async def lifespan(app: FastAPI):
     logger.info("  ADRS startup — loading indexes and graph")
     logger.info("══════════════════════════════════════════════════")
 
-    from backend.adrs.db_parser import load_drugbank_index, load_gdsc_index
-    from backend.adrs.graph_builder import build_knowledge_graph
+    from backend.adrs_old.db_parser import load_drugbank_index, load_gdsc_index
+    from backend.adrs_old.graph_builder import build_knowledge_graph
 
     # ── Load data indexes ─────────────────────────────────────────
     try:
@@ -86,8 +86,8 @@ async def lifespan(app: FastAPI):
     # Cached results are stored in DB so the same patient+drug combo
     # returns instantly on the second call instead of re-computing.
     try:
-        from backend.adrs.db_tables import create_tables, get_session_factory
-        import backend.adrs.api as adrs_api
+        from backend.adrs_old.db_tables import create_tables, get_session_factory
+        import backend.adrs_old.api as adrs_api
 
         logger.info("Connecting to PostgreSQL...")
         create_tables()                                    # creates tables if they don't exist
@@ -136,7 +136,7 @@ app.add_middleware(
 
 # ── Register ADRS router ──────────────────────────────────────────
 # All ADRS endpoints will be at /api/v1/adrs/...
-from backend.adrs.api import router as adrs_router
+from backend.adrs_old.api import router as adrs_router
 app.include_router(adrs_router, prefix="/api/v1")
 
 

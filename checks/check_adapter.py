@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 import numpy as np
-from backend.adrs.gcpge_adapter import translate_gcpge_to_adrs, PATHWAY_NAMES
+from backend.adrs_old.gcpge_adapter import translate_gcpge_to_adrs, PATHWAY_NAMES
 
 # Verify pw_id loaded correctly
 print(f"Pathway names loaded: {len(PATHWAY_NAMES)}")
