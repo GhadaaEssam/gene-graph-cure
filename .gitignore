@@ -5,3 +5,13 @@ backend/adrs/data/full_database.xml
 backend/model_inputs/
 backend/weights/
 myenv/
+venv/
+.venv/
+myenv/
+env/
+__pycache__/
+*.pyc
+.env
+*.pt
+*.pth
+model_inputs/
