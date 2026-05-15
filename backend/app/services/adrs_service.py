@@ -1,4 +1,4 @@
-﻿# backend/app/services/adrs_service.py
+# backend/app/services/adrs_service.py
 import logging
 from typing import Dict, List, Optional
 
@@ -144,3 +144,5 @@ class ADRSService:
             raise ValueError("ADRS graph and GDSC index must be loaded on app state")
 
         return cls(graph=graph, gdsc_index=gdsc_index, session_factory=session_factory)
+
+
