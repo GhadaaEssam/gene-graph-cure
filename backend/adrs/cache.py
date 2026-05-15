@@ -30,7 +30,7 @@ def save_recommendations(
     Returns:
         True on success, False on failure
     """
-    from backend.adrs_old.db_tables import AlternativeDrugsResult, DrugRecommendationRecord
+    from app.db.models.adrs_db_tables import AlternativeDrugsResult, DrugRecommendationRecord
 
     try:
         meta    = result.get("meta", {})
@@ -102,7 +102,7 @@ def get_cached_result(
     Returns:
         Dict matching rank_drugs() output format, or None
     """
-    from backend.adrs_old.db_tables import AlternativeDrugsResult, DrugRecommendationRecord
+    from adrs.db_tables import AlternativeDrugsResult, DrugRecommendationRecord
 
     try:
         # Find most recent result for this patient+drug

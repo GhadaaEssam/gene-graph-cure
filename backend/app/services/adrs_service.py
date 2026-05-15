@@ -1,11 +1,12 @@
-﻿import logging
+﻿# backend/app/services/adrs_service.py
+import logging
 from typing import Dict, List, Optional
 
 import networkx as nx
 
-from backend.app.schemas.adrs import ADRSRequest, ADRSResponse
-from ...adrs.cache import get_cached_result, save_recommendations
-from ...adrs.recommender import rank_drugs
+from app.schemas.adrs import ADRSRequest, ADRSResponse
+from adrs.cache import get_cached_result, save_recommendations
+from adrs.recommender import rank_drugs
 
 logger = logging.getLogger(__name__)
 

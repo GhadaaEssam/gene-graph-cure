@@ -4,6 +4,8 @@ PostgreSQL schema for storing and caching drug recommendations.
 Drug weights (SD, Reversal, Coverage, Gene Overlap) included per request.
 """
 
+import importlib
+from pathlib import Path
 from sqlalchemy import (
     Column, String, Float, Integer, Boolean,
     DateTime, JSON, Text, ForeignKey, Index,
@@ -14,11 +16,21 @@ from sqlalchemy.sql import func
 from datetime import datetime
 import os
 
+load_dotenv = None
+try:
+    dotenv = importlib.import_module("dotenv")
+    load_dotenv = dotenv.load_dotenv
+except ImportError:
+    pass
+
+if load_dotenv is not None:
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+
 Base = declarative_base()
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:post10900@localhost:5432/gc_pge_db"
+    "postgresql://postgres:ghpostgres@localhost:5432/gc_pge_db"
 )
 
 

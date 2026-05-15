@@ -2,16 +2,16 @@ import logging
 from typing import Dict, List, Optional
 import networkx as nx
 
-from backend.adrs_old.normalizer import normalize_delta_e
-from backend.adrs_old.pathway_mapper import get_standard_pathways
-from backend.adrs_old.graph_builder import query_candidates
-from backend.adrs_old.scoring import (
+from adrs.normalizer import normalize_delta_e
+from adrs.pathway_mapper import get_standard_pathways
+from adrs.graph_builder import query_candidates
+from adrs.scoring import (
     compute_reversal_score,
     compute_pathway_coverage,
     compute_gene_overlap,
     compute_sd_score
 )
-from backend.adrs_old.db_parser import query_dgidb
+from adrs.db_parser import query_dgidb
 
 logger = logging.getLogger(__name__)
 

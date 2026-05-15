@@ -1,3 +1,4 @@
+# backend/adrs/gcpge_adapter.py
 """
 GC-PGE Output Adapter — Final Version
 pw_w has 3090 values, one per pathway in pw_id.csv order.
