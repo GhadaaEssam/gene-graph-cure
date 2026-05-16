@@ -3,6 +3,7 @@ import logging
 import torch
 import numpy as np
 import pandas as pd
+import re
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 from pathlib import Path
@@ -40,46 +41,159 @@ class RAGService:
             embedding_function=embeddings
         )
 
-    def generate_evidence(self, prediction_result: dict, anchor_genes_df: pd.DataFrame):
+    def generate_evidence(
+        self,
+        prediction_result: dict,
+        anchor_genes_df: pd.DataFrame,
+        node_features_df: pd.DataFrame = None,
+        cancer_type: str = None,
+        drug: str = None,
+        top_k: int = 5,
+    ):
         """
         Takes the raw JSON output from the model, finds the top genes/pathways,
-        and queries the database.
+        and queries the database with cancer/drug/model-context-aware prompts.
         """
         if not self.vectorstore:
             return [{"title": "RAG Disabled", "excerpt": "Vector database not found."}]
 
-        # 1. Extract the gene importances from the model output
-        vimp_g = prediction_result.get('vimp_g', [])
-        
-        # 2. Find the indices of the top 3 highest scores
-        # np.argsort sorts ascending, so we take the last 3 and reverse them
-        top_indices = np.argsort(vimp_g)[-3:][::-1]
-        
-        # 3. Map indices back to gene names
-        # Assuming the first column of anchor_genes_df holds the names
-        gene_names = anchor_genes_df.iloc[:, 0].tolist()
-        
+        top_genes = self._extract_top_genes(prediction_result, anchor_genes_df, limit=5)
+        top_pathways = self._extract_top_pathways(prediction_result, node_features_df, limit=5)
+        is_multiomics = any(
+            key in prediction_result
+            for key in ("out_multiomics", "out_multiomics_probabilities")
+        )
+
+        if not top_genes and not top_pathways:
+            return [{"title": "Notice", "excerpt": "Could not map genes or pathways for query."}]
+
+        queries = self._build_queries(
+            top_genes=top_genes,
+            top_pathways=top_pathways,
+            cancer_type=cancer_type,
+            drug=drug,
+            is_multiomics=is_multiomics,
+        )
+
+        evidence = []
+        seen_pmids = set()
+        for query_type, query in queries:
+            results = self.vectorstore.similarity_search(query, k=top_k)
+            for res in results:
+                pmid = res.metadata.get("pmid", "Unknown")
+                if pmid in seen_pmids:
+                    continue
+                seen_pmids.add(pmid)
+                evidence.append({
+                    "title": res.metadata.get("title", "Unknown"),
+                    "pmid": pmid,
+                    "source": res.metadata.get("source", ""),
+                    "journal": res.metadata.get("journal", ""),
+                    "year": str(res.metadata.get("year", "")),
+                    "query_type": query_type,
+                    "matched_query": query,
+                    "excerpt": res.page_content[:500],
+                })
+
+        return evidence[:top_k]
+
+    def _extract_top_genes(self, prediction_result: dict, anchor_genes_df: pd.DataFrame, limit: int):
+        scores = prediction_result.get("vimp_g") or prediction_result.get("cor") or []
+        if not scores:
+            return []
+
+        top_indices = np.argsort(scores)[-limit:][::-1]
+        gene_names = self._gene_names_from_anchor(anchor_genes_df)
         top_genes = []
         for idx in top_indices:
             if idx < len(gene_names):
-                top_genes.append(str(gene_names[idx]))
+                gene = str(gene_names[idx]).strip()
+                if gene and gene not in top_genes:
+                    top_genes.append(gene)
 
-        if not top_genes:
-            return [{"title": "Notice", "excerpt": "Could not map genes for query."}]
+        return top_genes
 
-        # 4. Formulate the Query
-        genes_str = ", ".join(top_genes)
-        query = f"How do the genes {genes_str} influence drug resistance in cancer?"
-        
-        # 5. Search the Database
-        results = self.vectorstore.similarity_search(query, k=3)
-        
-        evidence = []
-        for res in results:
-            evidence.append({
-                "title": res.metadata.get('title', 'Unknown'),
-                "pmid": res.metadata.get('pmid', 'Unknown'),
-                "excerpt": res.page_content[:300] # Limiting excerpt length for the API response
-            })
-            
-        return evidence
+    def _gene_names_from_anchor(self, anchor_genes_df: pd.DataFrame):
+        for column in ("gene", "gene_name", "symbol", "Gene", "GeneSymbol"):
+            if column in anchor_genes_df.columns:
+                return anchor_genes_df[column].tolist()
+
+        # Some exports include an unnamed index column before the real gene
+        # column. Prefer the first non-index, non-label text-like column.
+        ignored = {"id", "result_num", "Unnamed: 0", ""}
+        for column in anchor_genes_df.columns:
+            if str(column) in ignored:
+                continue
+            return anchor_genes_df[column].tolist()
+
+        return anchor_genes_df.iloc[:, 0].tolist()
+
+    def _extract_top_pathways(self, prediction_result: dict, node_features_df: pd.DataFrame, limit: int):
+        if node_features_df is None or "pw_w" not in prediction_result:
+            return []
+
+        pathway_scores = prediction_result.get("pw_w") or []
+        if not pathway_scores:
+            return []
+
+        pathway_names = list(node_features_df.columns[1:])
+        top_indices = np.argsort(pathway_scores)[-limit:][::-1]
+        top_pathways = []
+        for idx in top_indices:
+            if idx < len(pathway_names):
+                pathway = self._clean_pathway_name(pathway_names[idx])
+                if pathway and pathway not in top_pathways:
+                    top_pathways.append(pathway)
+
+        return top_pathways
+
+    def _clean_pathway_name(self, pathway_name: str):
+        pathway = str(pathway_name)
+        pathway = re.sub(r"^(KEGG|REACTOME|BIOCARTA|PID|NABA|SA|SIG)_", "", pathway)
+        pathway = pathway.replace("_", " ").strip()
+        return pathway
+
+    def _build_queries(
+        self,
+        top_genes,
+        top_pathways,
+        cancer_type: str = None,
+        drug: str = None,
+        is_multiomics: bool = False,
+    ):
+        cancer_text = cancer_type.strip() if cancer_type else "cancer"
+        drug_text = drug.strip() if drug else "therapy"
+        genes_text = ", ".join(top_genes) if top_genes else "model-selected genes"
+        pathways_text = ", ".join(top_pathways) if top_pathways else "model-selected pathways"
+
+        queries = [
+            (
+                "gene_drug_resistance",
+                (
+                    f"In {cancer_text} treated with {drug_text}, what evidence links "
+                    f"{genes_text} to drug resistance, treatment response, prognosis, "
+                    "or predictive biomarkers?"
+                ),
+            ),
+            (
+                "pathway_drug_resistance",
+                (
+                    f"In {cancer_text} treated with {drug_text}, how do the pathways "
+                    f"{pathways_text} contribute to resistance, sensitivity, tumor "
+                    "progression, immune evasion, or treatment response?"
+                ),
+            ),
+        ]
+
+        if is_multiomics:
+            queries.append((
+                "multiomics_mechanism",
+                (
+                    f"Multi-omics evidence in {cancer_text} treated with {drug_text}: "
+                    f"integrated transcriptomics, DNA methylation, copy number variation, "
+                    f"mutation or SNV data involving {genes_text} and {pathways_text} "
+                    "for therapy resistance or response prediction."
+                ),
+            ))
+
+        return queries

@@ -35,6 +35,17 @@ INPUT_JSON = os.path.join(PROJECT_ROOT, "data", "raw_documents", "pubmed_foundat
 VECTOR_DB_DIR = os.path.join(PROJECT_ROOT, "data", "vector_store")
 
 
+def _metadata_value(value):
+    """Chroma metadata values must be scalar, so keep lists/dicts searchable as text."""
+    if value is None:
+        return ""
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, list):
+        return "; ".join(str(item) for item in value)
+    return str(value)
+
+
 def load_and_process_data(json_path: str) -> list:
     """
     Reads the JSON file containing medical abstracts and converts them into 
@@ -49,12 +60,27 @@ def load_and_process_data(json_path: str) -> list:
 
     documents = []
     for item in raw_data:
+        title = item.get("title", "")
+        abstract = item.get("abstract") or item.get("content", "")
+        content = item.get("content") or f"Title: {title}\nAbstract: {abstract}"
+        mesh_terms = _metadata_value(item.get("mesh_terms", ""))
+        keywords = _metadata_value(item.get("keywords", ""))
+        if mesh_terms:
+            content = f"{content}\nMeSH Terms: {mesh_terms}"
+        if keywords:
+            content = f"{content}\nKeywords: {keywords}"
+
         doc = Document(
-            page_content=item["content"],
+            page_content=content,
             metadata={
-                "title": item["title"],
-                "source": item["source_url"],
-                "pmid": item["id"]
+                "title": _metadata_value(title),
+                "source": _metadata_value(item.get("source_url", "")),
+                "pmid": _metadata_value(item.get("id", "")),
+                "journal": _metadata_value(item.get("journal", "")),
+                "year": _metadata_value(item.get("year", "")),
+                "publication_types": _metadata_value(item.get("publication_types", "")),
+                "mesh_terms": mesh_terms,
+                "keywords": keywords,
             }
         )
         documents.append(doc)
@@ -79,8 +105,8 @@ def build_database():
     # 3. Text Chunking
     print("[*] Step 2: Chunking text for embedding...")
     text_splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200,
+        chunk_size=900,
+        chunk_overlap=150,
         length_function=len
     )
     chunks = text_splitter.split_documents(docs)

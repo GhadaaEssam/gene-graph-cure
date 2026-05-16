@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile
+from fastapi import APIRouter, HTTPException, File, Form, UploadFile
 from app.schemas.predict import PredictionResult
 from app.services.gc_pge_service import GC_PGE_Service
 from pathlib import Path
@@ -41,11 +41,14 @@ try:
     rag_service = RAGService()
     logger.info("RAG Service initialized successfully.")
 except Exception as e:
+    rag_service = None
     logger.warning(f"RAG Service failed to start: {e}")
     
 
 @router.post("/predict", response_model=PredictionResult)
 async def predict(
+    cancer_type: str = Form(None),
+    drug: str = Form(None),
     geo_features: UploadFile = File(...),
     anchor_genes: UploadFile = File(...),
     node_features: UploadFile = File(...),
@@ -77,8 +80,21 @@ async def predict(
         anchor_content = await anchor_genes.read()
         anchor_df = pd.read_csv(io.BytesIO(anchor_content), header=0)
 
-        # Generate the medical context!
-        evidence = rag_service.generate_evidence(result, anchor_df)
+        await node_features.seek(0)
+        node_content = await node_features.read()
+        node_features_df = pd.read_csv(io.BytesIO(node_content), header=0)
+
+        # Generate the medical context.
+        if rag_service:
+            evidence = rag_service.generate_evidence(
+                result,
+                anchor_df,
+                node_features_df=node_features_df,
+                cancer_type=cancer_type,
+                drug=drug,
+            )
+        else:
+            evidence = [{"title": "RAG Disabled", "excerpt": "RAG service failed to initialize."}]
         
         # Attach it to the final JSON response
         result["rag_evidence"] = evidence

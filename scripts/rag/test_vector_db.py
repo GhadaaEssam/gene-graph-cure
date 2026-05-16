@@ -54,8 +54,12 @@ def test_database():
     print("✅ Database connected successfully!\n")
 
     # 5. Execute the Test Search
-    query = "How does lactate influence immune resistance?"
-    print(f"🔍 Searching for: '{query}'")
+    query = (
+        "In hepatocellular carcinoma treated with sorafenib, what evidence links "
+        "TP53, EGFR and MAPK signaling to drug resistance, treatment response, "
+        "or multi-omics biomarkers?"
+    )
+    print(f"Searching for: '{query}'")
     print("-" * 50)
 
     # Retrieve the top 3 most relevant chunks
@@ -65,9 +69,10 @@ def test_database():
         print("⚠️ No results found. The database might be empty.")
     else:
         for i, res in enumerate(results):
-            print(f"\n🎯 MATCH {i+1}:")
+            print(f"\nMATCH {i+1}:")
             print(f"Title:  {res.metadata.get('title', 'Unknown Title')}")
             print(f"PMID:   {res.metadata.get('pmid', 'Unknown PMID')}")
+            print(f"Year:   {res.metadata.get('year', 'Unknown')}")
             # Print just the first 300 characters of the content so it doesn't flood the terminal
             print(f"Excerpt: {res.page_content[:300]}...")
             print("-" * 50)
