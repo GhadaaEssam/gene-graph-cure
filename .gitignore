@@ -12,4 +12,5 @@ data/
 ipynb_checkpoints/
 weights/
 tests/*.json
-
+model_inputs/
+docs/

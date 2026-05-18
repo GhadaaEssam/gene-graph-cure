@@ -8,7 +8,7 @@ url = "http://localhost:8000/predict"
 # 2. Dynamically build the absolute path to the data folder
 # This finds the 'tests' folder, goes up one level, and goes into 'data/model_outputs'
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(SCRIPT_DIR, "..", "data", "model_outputs")
+DATA_DIR = os.path.join(SCRIPT_DIR, "..", "data", "backend", "model_inputs", "liver_cancer")
 
 print("Loading files...")
 # 3. Use the dynamic DATA_DIR for all files
