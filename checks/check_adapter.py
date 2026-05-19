@@ -22,12 +22,38 @@ pw_w_simulated[219] = 0.78   # REACTOME_CONSTITUTIVE_SIGNALING_BY_LIGAND_RESPONS
 pw_w_simulated[196] = 0.72   # REACTOME_MAPK1_ERK2_ACTIVATION
 pw_w_simulated[3043] = 0.69  # PID_PI3KCI_AKT_PATHWAY
 
+# Simulates the UPDATED /predict response (new structured fields)
 mock_gcpge_response = {
-    "out":    [[0.87]],
-    "pw_w":   pw_w_simulated,
-    "vimp_g": [0.95, 0.88, 0.72, 0.61, 0.45, 0.30, 0.12],
+    # ── Debug fields (not used by ADRS) ───────────────────────────
     "loss_mutiGAT": 0.023,
-    "loss_L1": 0.004
+    "loss_L1":      0.004,
+    "out":          [1, 0, 1],
+    "temp":         [[0.1]],
+    "graph":        [[0.1, 0.8], [0.4, 0.2]],
+    "pw_w":         [0.82, 0.61, 0.45] + [0.20] * 3087,  # still present
+    "vimp_g":       [0.95, 0.88, 0.45, 0.30, 0.12],      # still present
+
+    # ── NEW structured fields (used by updated adapter) ───────────
+    "structured_core_pathways": [
+        {"index": 8,   "name": "BIOCARTA_EGFR_SMRTE_PATHWAY",    "weight": 0.82},
+        {"index": 219, "name": "REACTOME_PI3K_AKT_SIGNALING",     "weight": 0.61},
+        {"index": 163, "name": "REACTOME_MAPK3_ERK1_ACTIVATION",  "weight": 0.45},
+        {"index": 42,  "name": "BIOCARTA_CELL_CYCLE_PATHWAY",     "weight": 0.30},
+        {"index": 77,  "name": "BIOCARTA_APOPTOSIS_PATHWAY",      "weight": 0.20},
+    ],
+    "structured_core_genes": [
+        {"index": 12, "name": "EGFR",   "score": 0.95, "correlation": 0.84, "is_anchor": True},
+        {"index": 33, "name": "KRAS",   "score": 0.88, "correlation": 0.79, "is_anchor": True},
+        {"index": 7,  "name": "TP53",   "score": 0.72, "correlation": 0.65, "is_anchor": True},
+        {"index": 91, "name": "PIK3CA", "score": 0.61, "correlation": 0.58, "is_anchor": False},
+        {"index": 44, "name": "BRAF",   "score": 0.45, "correlation": 0.40, "is_anchor": False},
+    ],
+    "core_genes":    ["EGFR", "KRAS", "TP53", "PIK3CA", "BRAF"],
+    "core_pathways": [
+        "BIOCARTA_EGFR_SMRTE_PATHWAY",
+        "REACTOME_PI3K_AKT_SIGNALING",
+        "REACTOME_MAPK3_ERK1_ACTIVATION"
+    ]
 }
 
 anchor_genes = ["EGFR", "KRAS", "TP53", "PIK3CA", "MAP3K7", "BRAF", "MET"]
