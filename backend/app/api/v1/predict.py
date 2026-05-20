@@ -1,63 +1,86 @@
-from fastapi import APIRouter, HTTPException, File, Form, UploadFile
-from app.schemas.predict import ModelKey, PredictionResult
-from app.services.model_service_registry import ModelServiceRegistry
-from pathlib import Path
 import logging
+from pathlib import Path
+from typing import Optional
 
-# Set up logging
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+
+from app.schemas.predict import ModelKey, PredictionResult
+from app.services.gc_pge_service import GC_PGE_Service
+
 logger = logging.getLogger(__name__)
 
-# Initialize router
 router = APIRouter()
 
-# Project root setup
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 WEIGHTS_DIR = PROJECT_ROOT / "weights"
-MODEL_INPUTS_DIR = PROJECT_ROOT / "model_inputs"
 
-# Lazy-load services as each model is requested.
-model_registry = ModelServiceRegistry(
-    weights_dir=WEIGHTS_DIR,
-    model_inputs_dir=MODEL_INPUTS_DIR,
-    model_files={
-        "liver": "liver_model.pt",
-        "ovarian": "ovarian_model.pt",
-        "immunotherapy": "immunotherapy_model.pt",
-    },
-)
+MODEL_PATHS = {
+    "liver": str(WEIGHTS_DIR / "liver_model.pt"),
+    "ovarian": str(WEIGHTS_DIR / "ovarian_model.pt"),
+    "immunotherapy": str(WEIGHTS_DIR / "immunotherapy_model.pt"),
+    "breast": str(WEIGHTS_DIR / "breast_model.pt"),
+}
+MULTIOMICS_MODEL_PATH = str(WEIGHTS_DIR / "final_multiomics_model.pt")
+
+try:
+    gc_pge_service = GC_PGE_Service(
+        model_paths=MODEL_PATHS,
+        multiomics_model_path=MULTIOMICS_MODEL_PATH,
+    )
+    logger.info("Prediction service initialized with models: %s", ", ".join(MODEL_PATHS))
+except Exception as e:
+    raise RuntimeError(f"Failed to initialize GC_PGE_Service: {e}") from e
+
 
 @router.post("/predict", response_model=PredictionResult)
 async def predict(
+    include_graph: bool = Query(
+        False,
+        description="Return the full learned graph matrix. Leave false in Swagger for faster display.",
+    ),
     geo_features: UploadFile = File(...),
-    model: ModelKey = Form(...),
+    cancer_type: Optional[ModelKey] = Form(None),
+    model: Optional[ModelKey] = Form(None),
+    meth_features: Optional[UploadFile] = File(None),
+    cnv_features: Optional[UploadFile] = File(None),
+    snv_features: Optional[UploadFile] = File(None),
 ):
     """
-    Run GC-PGE model inference using patient GEO features and static model inputs.
+    Run GC-PGE inference from uploaded GEO features.
+
+    Base RNA models are selected by cancer_type. For breast cancer, uploading all
+    three optional omics files routes the request to the multi-omics model.
     """
     try:
-        service = model_registry.get_service(model.value)
-        static_inputs_dir = model_registry.get_static_inputs_dir(model.value)
-        logger.info("Running prediction with model: %s", model)
+        selected_model = cancer_type or model
+        if selected_model is None:
+            raise ValueError("Either cancer_type or model must be provided.")
 
-        result = await service.predict_from_geo_file(
-            geo_features=geo_features,
-            static_inputs_dir=static_inputs_dir,
+        raw_files = {
+            "cancer_type": selected_model.value,
+            "geo_features": geo_features,
+            "meth_features": meth_features,
+            "cnv_features": cnv_features,
+            "snv_features": snv_features,
+        }
+
+        return await gc_pge_service.predict_from_files(
+            raw_files,
+            include_graph=include_graph,
         )
 
-        return result
-
     except ValueError as e:
-        logger.warning(f"Validation error: {e}")
-        raise HTTPException(status_code=422, detail=str(e))
+        logger.warning("Validation error: %s", e)
+        raise HTTPException(status_code=422, detail=str(e)) from e
 
     except FileNotFoundError as e:
-        logger.error(f"Model configuration error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error("Model configuration error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
     except RuntimeError as e:
-        logger.error(f"Inference failure: {e}")
-        raise HTTPException(status_code=500, detail=f"Model inference failed: {e}")
+        logger.error("Inference failure: %s", e)
+        raise HTTPException(status_code=500, detail=f"Model inference failed: {e}") from e
 
     except Exception as e:
         logger.error("Unexpected error during prediction", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail=f"Unexpected error: {e}") from e

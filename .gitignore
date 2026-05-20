@@ -1,11 +1,15 @@
 venv/
-.venv/
-myenv/
-env/
-__pycache__/
-*.pyc
 .env
+.env.example
+*.db
+*.sqlite3
+*.sqlite
+__pycache__/
 *.pt
 *.pth
 D:\uni\Grad project\Predicting drug resistance\gene-graph-cure\dummy_input.json
+data/
+tests/
+ipynb_checkpoints/
+docs/
 model_inputs/

@@ -1,0 +1,16 @@
+# --- RAG & Knowledge Base ---
+langchain==0.1.16
+langchain-community==0.0.34
+chromadb==0.4.24
+biopython==1.83
+sentence-transformers==2.7.0
+
+# --- Core ML Data Processing ---
+pandas==2.2.2
+numpy==1.26.4
+torch==2.3.0
+
+# --- Backend API ---
+fastapi==0.110.2
+uvicorn==0.29.0
+python-dotenv==1.0.1
