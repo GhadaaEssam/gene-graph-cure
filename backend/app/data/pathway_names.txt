@@ -1,0 +1,5 @@
+PI3K-AKT signaling pathway
+MAPK signaling pathway
+Cell cycle
+Apoptosis
+Wnt signaling pathway

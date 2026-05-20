@@ -129,9 +129,9 @@ const handleRunAnalysis = async () => {
                 onChange={(e) => setCancerType(e.target.value)}
               >
                 <option>Select a cancer type</option>
-                <option value="Breast Cancer">Breast Cancer</option>
-                <option value="Lung Cancer">Lung Cancer</option>
-                <option value="Leukemia">Leukemia</option>
+                <option value="Melanoma">Melanoma</option>
+                <option value="Ovarian Cancer">Ovarian Cancer</option>
+                <option value="Liver Cancer">Liver Cancer</option>
               </Form.Select>
             </Form.Group>
 

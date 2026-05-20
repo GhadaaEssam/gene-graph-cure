@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from app.core.database import engine 
 from app.db.models import Base 
-from app.api.v1 import predict, jobs, analyses , auth , chat , dashboard , graph
+from app.api.v1 import predict, jobs, analysis , auth , chat , dashboard , graph
 
 
 app = FastAPI()
@@ -19,7 +19,7 @@ app.add_middleware(
 
 app.include_router(predict.router)
 app.include_router(jobs.router)
-app.include_router(analyses.router)
+app.include_router(analysis.router)
 app.include_router(auth.router)
 app.include_router(chat.router)
 app.include_router(dashboard.router)

@@ -20,7 +20,7 @@ export const runAnalysis = async (formData) => {
 // 2️⃣ Get analysis result
 export const getAnalysisResult = async (job_id) => {
   const response = await fetch(
-    `http://localhost:8000/analyses/${job_id}`, {
+    `http://localhost:8000/analysis/${job_id}`, {
     headers: getAuthHeaders(), 
   
 });
