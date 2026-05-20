@@ -43,8 +43,8 @@ def extract_genes_from_headers(input_file, output_file, sample_id_col=0):
 # --- HOW TO RUN IT ---
 if __name__ == "__main__":
     # Replace these with your actual file paths
-    INPUT_DATA = "backend\\model_inputs\\breast\\geo_full_data.csv"
-    OUTPUT_DATA = "backend\\model_inputs\\breast\\expected_geo_genes.csv"
+    INPUT_DATA = "backend\\model_inputs\\colorectal\\cr_raw_X_train.csv"
+    OUTPUT_DATA = "backend\\model_inputs\\colorectal\\expected_geo_genes.csv"
 
     # The script assumes your first column (index 0) is something like 'Sample_ID'.
     # It will skip this column and treat all other headers as genes.

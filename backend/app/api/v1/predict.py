@@ -23,6 +23,8 @@ model_registry = ModelServiceRegistry(
         "liver": "liver_model.pt",
         "ovarian": "ovarian_model.pt",
         "immunotherapy": "immunotherapy_model.pt",
+        "colorectal": "colorectal_model.pt",
+        "breast": "breast_model.pt",
     },
 )
 

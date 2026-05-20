@@ -8,7 +8,7 @@ import pandas as pd
 
 DEFAULT_MODEL_INPUTS_DIR = Path(__file__).resolve().parents[1] / "model_inputs"
 EXPECTED_GENES_FILENAME = "expected_geo_genes.csv"
-TRAINING_DATA_FILENAME = "geo_train_split.csv"
+TRAINING_DATA_FILENAME = "ov_raw_X_train.csv" # geo data
 ANCHOR_GENES_FILENAME = "anchor_genes.csv"
 OUTPUT_FILENAME = "geo_gene_medians.csv"
 

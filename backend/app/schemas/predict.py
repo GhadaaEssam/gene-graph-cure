@@ -6,6 +6,8 @@ class ModelKey(str, Enum):
     liver = "liver"
     ovarian = "ovarian"
     immunotherapy = "immunotherapy"
+    colorectal = "colorectal"
+    breast = "breast"
 
 class CoreGene(BaseModel):
     index: int

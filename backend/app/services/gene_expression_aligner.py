@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Hashable, Literal
+from typing import Hashable, Mapping, Literal
 
 import pandas as pd
 
@@ -31,10 +31,12 @@ class GeneExpressionAligner:
         expected_genes_path: str | Path,
         medians_path: str | Path,
         min_match_rate: float = 0.7,
+        omics_name: str = "GEO",
     ) -> None:
         self.expected_genes_path = Path(expected_genes_path)
         self.medians_path = Path(medians_path)
         self.min_match_rate = min_match_rate
+        self.omics_name = omics_name
 
         self.expected_genes = self._load_expected_genes(self.expected_genes_path)
         self.normalized_expected = {
@@ -165,6 +167,9 @@ class GeneExpressionAligner:
             "matched_genes": matched_count,
             "missing_genes": len(missing_genes),
             "extra_genes": len(extra_genes),
+            "matched_gene_names": matched_genes,
+            "missing_gene_names": missing_genes,
+            "extra_gene_names": extra_genes,
             "duplicate_genes": duplicate_upload_genes,
             "match_rate": matched_count / expected_count if expected_count else 0.0,
         }
@@ -172,7 +177,7 @@ class GeneExpressionAligner:
     def _validate(self, alignment_report: dict) -> None:
         if alignment_report["match_rate"] < self.min_match_rate:
             raise ValueError(
-                "Uploaded GEO genes match only "
+                f"Uploaded {self.omics_name} genes match only "
                 f"{alignment_report['match_rate']:.1%} of the expected model "
                 f"contract; minimum is {self.min_match_rate:.1%}."
             )
@@ -272,3 +277,113 @@ class GeneExpressionAligner:
                 medians["median"].astype(float),
             )
         )
+
+
+class MultiOmicsGeneExpressionAligner:
+    """
+    Align the four breast multiomics uploaded tables to one immutable gene contract.
+
+    Each modality is aligned independently and filled from its own training medians.
+    The returned frames are all samples x expected genes in the same column order.
+    """
+
+    MODALITY_MEDIAN_FILENAMES = {
+        "rna": "rna_gene_medians.csv",
+        "cnv": "cnv_gene_medians.csv",
+        "snv": "snv_gene_medians.csv",
+        "meth": "meth_gene_medians.csv",
+    }
+
+    def __init__(
+        self,
+        expected_genes_path: str | Path,
+        medians_paths: Mapping[str, str | Path],
+        min_match_rate: float = 0.7,
+    ) -> None:
+        self.expected_genes_path = Path(expected_genes_path)
+        self.min_match_rate = min_match_rate
+        self.modalities = tuple(self.MODALITY_MEDIAN_FILENAMES.keys())
+
+        missing_modalities = [
+            modality
+            for modality in self.modalities
+            if modality not in medians_paths
+        ]
+        if missing_modalities:
+            raise ValueError(
+                "Missing medians paths for multiomics modalities: "
+                f"{', '.join(missing_modalities)}"
+            )
+
+        self.aligners = {
+            modality: GeneExpressionAligner(
+                expected_genes_path=self.expected_genes_path,
+                medians_path=Path(medians_paths[modality]),
+                min_match_rate=min_match_rate,
+                omics_name=modality,
+            )
+            for modality in self.modalities
+        }
+
+    @classmethod
+    def from_static_inputs_dir(
+        cls,
+        static_inputs_dir: str | Path,
+        min_match_rate: float = 0.7,
+    ) -> "MultiOmicsGeneExpressionAligner":
+        static_inputs_path = Path(static_inputs_dir)
+        return cls(
+            expected_genes_path=static_inputs_path / "expected_geo_genes.csv",
+            medians_paths={
+                modality: static_inputs_path / filename
+                for modality, filename in cls.MODALITY_MEDIAN_FILENAMES.items()
+            },
+            min_match_rate=min_match_rate,
+        )
+
+    def align(
+        self,
+        data_samples: Mapping[str, pd.DataFrame],
+    ) -> tuple[dict[str, pd.DataFrame], dict]:
+        missing_modalities = [
+            modality
+            for modality in self.modalities
+            if modality not in data_samples
+        ]
+        if missing_modalities:
+            raise ValueError(
+                "Missing uploaded multiomics files for modalities: "
+                f"{', '.join(missing_modalities)}"
+            )
+
+        aligned: dict[str, pd.DataFrame] = {}
+        reports: dict[str, dict] = {}
+        sample_counts: dict[str, int] = {}
+
+        for modality in self.modalities:
+            aligned_frame, report = self.aligners[modality].align(
+                data_samples[modality]
+            )
+            aligned[modality] = aligned_frame
+            reports[modality] = report
+            sample_counts[modality] = len(aligned_frame)
+
+        self._validate_sample_counts(sample_counts)
+        return aligned, {
+            "modalities": list(self.modalities),
+            "sample_counts": sample_counts,
+            "reports": reports,
+        }
+
+    @staticmethod
+    def _validate_sample_counts(sample_counts: Mapping[str, int]) -> None:
+        unique_counts = set(sample_counts.values())
+        if len(unique_counts) > 1:
+            formatted_counts = ", ".join(
+                f"{modality}={count}"
+                for modality, count in sample_counts.items()
+            )
+            raise ValueError(
+                "Uploaded multiomics files must contain the same number of "
+                f"samples after alignment. Got: {formatted_counts}"
+            )
