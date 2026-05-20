@@ -11,3 +11,5 @@ D:\uni\Grad project\Predicting drug resistance\gene-graph-cure\dummy_input.json
 data/
 tests/
 ipynb_checkpoints/
+backend/model_inputs/
+backend/weights/
