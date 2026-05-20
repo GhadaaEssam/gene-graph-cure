@@ -8,11 +8,12 @@ class CancerType(str, Enum):
     colon = "colon"
 
 class PredictionRequest(BaseModel):
-    node_features:  List[List[float]]
-    ppi_edges:      List[List[int]]
-    homolog_edges:  List[List[int]]
+    # node_features:  List[List[float]]
+    # ppi_edges:      List[List[int]]
+    # homolog_edges:  List[List[int]]
+    # anchor_genes: List[str]
     geo_features:   List[List[float]]
-    anchor_genes: List[str]
+    cancer_type: CancerType 
 
 class PredictionResult(BaseModel):
     model_config = ConfigDict(extra='allow')
