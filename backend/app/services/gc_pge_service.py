@@ -1,16 +1,13 @@
 import io
-import logging
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Mapping
 
 import numpy as np
 import pandas as pd
 import torch
-from fastapi import UploadFile
-from scipy.special import erfinv
 
-# --- Module path setup ---
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "gcpge"))
 
@@ -18,47 +15,223 @@ import model
 
 sys.modules["model.model"] = model
 
+from app.services.gene_expression_aligner import (
+    GeneExpressionAligner,
+    MultiOmicsGeneExpressionAligner,
+)
 from gcpge.preprocess import preprocess_for_inference
-
-logger = logging.getLogger(__name__)
 
 
 class GC_PGE_Service:
     CORE_RESULT_LIMIT = 10
     MULTIOMICS_FILE_KEYS = ("meth_features", "cnv_features", "snv_features")
     STATIC_INPUT_FILENAMES = {
-        "anchor_genes": "anchor_genes.csv",
-        "node_features": "node_features.csv",
-        "ppi_edges": "ppi_edges.csv",
-        "homolog_edges": "homolog_edges.csv",
+        "anchor_genes": ("anchor_genes.csv",),
+        "node_features": ("node_features.csv",),
+        "ppi_edges": ("ppi_edges.csv",),
+        "homolog_edges": ("homolog_edges.csv", "homolg_edges.csv"),
+        "expected_geo_genes": ("expected_geo_genes.csv",),
+        "geo_gene_medians": ("geo_gene_medians.csv", "rna_gene_medians.csv"),
     }
     EPSILON = np.finfo(float).eps
 
     def __init__(
         self,
-        model_paths: Union[Dict[str, str], str],
-        multiomics_model_path: Optional[str] = None,
+        model_path: str,
+        static_inputs_dir: Path,
+        multiomics_model_paths: list[str] | None = None,
     ):
+        model_path_obj = Path(model_path)
+        if not model_path_obj.exists():
+            raise FileNotFoundError(f"Model weights not found at: {model_path}")
+
+        self.static_inputs_dir = Path(static_inputs_dir)
+        self._validate_static_inputs(self.static_inputs_dir)
+
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.pathway_id_labels = self._load_pathway_id_labels(
             PROJECT_ROOT / "gcpge" / "pw_id.csv"
         )
+        self.gene_aligner = GeneExpressionAligner(
+            expected_genes_path=self._static_input_path("expected_geo_genes"),
+            medians_path=self._static_input_path("geo_gene_medians"),
+        )
+        self.multiomics_aligner = self._build_multiomics_aligner()
 
-        self.base_models = {}
-        self.base_model_paths = {}
-        if isinstance(model_paths, (str, Path)):
-            self.base_model_paths["default"] = str(model_paths)
+        self.model = self._load_model(str(model_path_obj))
+        self.multiomics_models = [
+            self._load_model(path)
+            for path in (multiomics_model_paths or [])
+            if path
+        ]
+        if not self.multiomics_models and self._supports_multiomics(self.model):
+            self.multiomics_models = [self.model]
+
+    async def predict_from_files(
+        self,
+        files_dict: Mapping[str, object],
+        include_graph: bool = True,
+    ):
+        contents = {
+            key: await uploaded_file.read()
+            for key, uploaded_file in files_dict.items()
+            if uploaded_file is not None
+        }
+        if "geo_features" not in contents:
+            raise ValueError("geo_features file is required")
+
+        has_multiomics = any(key in contents for key in self.MULTIOMICS_FILE_KEYS)
+        has_all_multiomics = all(key in contents for key in self.MULTIOMICS_FILE_KEYS)
+        if has_multiomics and not has_all_multiomics:
+            missing = [key for key in self.MULTIOMICS_FILE_KEYS if key not in contents]
+            raise ValueError(
+                "Multi-omics prediction requires all optional files: "
+                f"{', '.join(missing)}"
+            )
+
+        processed_data = self._build_base_input(contents)
+        if has_all_multiomics:
+            if self.multiomics_aligner is None:
+                raise ValueError(
+                    "This model input folder is not configured for multi-omics alignment"
+                )
+            processed_data["omics"] = self._build_multiomics_input(contents)
+
+        return self.predict(processed_data, include_graph=include_graph)
+
+    def predict(self, raw_input: dict, include_graph: bool = True):
+        if "omics" in raw_input:
+            return self.predict_multiomics(raw_input, include_graph=include_graph)
+        return self.predict_base(raw_input, include_graph=include_graph)
+
+    def predict_base(self, raw_input: dict, include_graph: bool = True):
+        with torch.no_grad():
+            data, geo_tensor = preprocess_for_inference(raw_input)
+            data = data.to(self.device)
+            geo_tensor = geo_tensor.to(self.device)
+
+            result = self.model(data, geo_tensor)
+            json_result = self._to_json_serializable(result, collapse_out=True)
+            self._add_common_metadata(json_result, raw_input)
+            return self._filter_heavy_outputs(json_result, include_graph=include_graph)
+
+    def predict_multiomics(self, raw_input: dict, include_graph: bool = True):
+        if not self.multiomics_models:
+            raise ValueError(
+                "Multi-omics files were provided, but no multi-omics checkpoint is configured"
+            )
+
+        with torch.no_grad():
+            data, _ = preprocess_for_inference(raw_input)
+            data = data.to(self.device)
+
+            omics = raw_input["omics"]
+            x_rna = self._frame_to_tensor(omics["data_geo_x"])
+            x_meth = self._frame_to_tensor(omics["data_meth_x"])
+            x_cnv = self._frame_to_tensor(omics["data_cnv_x"])
+            x_snv = self._frame_to_tensor(omics["data_snv_x"])
+
+            accumulated: dict[str, torch.Tensor] = {}
+            log_probability_keys = {"out", "out_multiomics", "temp"}
+
+            for loaded_model in self.multiomics_models:
+                if not self._supports_multiomics(loaded_model):
+                    raise ValueError(
+                        "Configured checkpoint does not include the multi-omics branch"
+                    )
+
+                result = loaded_model(
+                    data,
+                    x_rna,
+                    x_meth=x_meth,
+                    x_cnv=x_cnv,
+                    x_snv=x_snv,
+                )
+                if "out_multiomics" not in result:
+                    raise RuntimeError("Multi-omics model did not return 'out_multiomics'")
+
+                for key, value in result.items():
+                    if not isinstance(value, torch.Tensor):
+                        continue
+                    value_to_add = torch.exp(value) if key in log_probability_keys else value
+                    accumulated[key] = accumulated.get(key, 0) + value_to_add
+
+            averaged = {}
+            for key, value in accumulated.items():
+                averaged_value = value / len(self.multiomics_models)
+                if key in log_probability_keys:
+                    averaged_value = torch.log(averaged_value.clamp_min(self.EPSILON))
+                averaged[key] = averaged_value
+
+            probabilities = torch.exp(averaged["out_multiomics"])
+            averaged["out_multiomics_probabilities"] = probabilities
+            averaged["prediction"] = probabilities.argmax(dim=1)
+            averaged["sample_ids"] = omics["sample_ids"]
+            averaged["gene_ids"] = omics["gene_ids"]
+            averaged["multiomics_alignment"] = omics["alignment_report"]
+
+            json_result = self._to_json_serializable(averaged, collapse_out=True)
+            self._add_common_metadata(json_result, raw_input)
+            return self._filter_heavy_outputs(json_result, include_graph=include_graph)
+
+    def _build_base_input(self, contents: Mapping[str, bytes]) -> dict:
+        data_sample = pd.read_csv(io.BytesIO(contents["geo_features"]), header=0)
+        aligned_geo, alignment_report = self.gene_aligner.align(data_sample)
+
+        anchor_genes = pd.read_csv(self._static_input_path("anchor_genes"), header=0)
+        data_x_raw = pd.read_csv(self._static_input_path("node_features"), header=0)
+
+        processed_data = {
+            "geo_features": aligned_geo,
+            "_input_alignment": alignment_report,
+            "anchor_genes": anchor_genes,
+            "_anchor_gene_names": self._extract_gene_names(anchor_genes),
+            "node_features": data_x_raw.iloc[:, 1:],
+            "ppi_edges": pd.read_csv(self._static_input_path("ppi_edges"), header=0),
+            "homolog_edges": pd.read_csv(
+                self._static_input_path("homolog_edges"),
+                header=0,
+            ),
+        }
+        processed_data["_node_names"] = self._merge_preferred_labels(
+            processed_data["_anchor_gene_names"],
+            data_x_raw.iloc[:, 0].astype(str).tolist(),
+        )
+        processed_data["_pathway_names"] = self._resolve_pathway_names(
+            [str(column) for column in data_x_raw.columns[1:]]
+        )
+        if "result_num" in anchor_genes.columns:
+            processed_data["_anchor_indices"] = set(
+                int(index)
+                for index in anchor_genes.index[anchor_genes["result_num"] == 1]
+            )
         else:
-            for cancer_type, path in model_paths.items():
-                self.base_model_paths[cancer_type] = path
+            processed_data["_anchor_indices"] = set()
 
-        self.multiomics_model = None
-        self.multiomics_model_path = multiomics_model_path
+        return processed_data
+
+    def _build_multiomics_input(self, contents: Mapping[str, bytes]) -> dict:
+        assert self.multiomics_aligner is not None
+        aligned, alignment_report = self.multiomics_aligner.align(
+            {
+                "rna": pd.read_csv(io.BytesIO(contents["geo_features"]), header=0),
+                "meth": pd.read_csv(io.BytesIO(contents["meth_features"]), header=0),
+                "cnv": pd.read_csv(io.BytesIO(contents["cnv_features"]), header=0),
+                "snv": pd.read_csv(io.BytesIO(contents["snv_features"]), header=0),
+            }
+        )
+
+        return {
+            "data_geo_x": aligned["rna"],
+            "data_meth_x": aligned["meth"],
+            "data_cnv_x": aligned["cnv"],
+            "data_snv_x": aligned["snv"],
+            "sample_ids": [str(index) for index in aligned["rna"].index.tolist()],
+            "gene_ids": aligned["rna"].columns.astype(str).tolist(),
+            "alignment_report": alignment_report,
+        }
 
     def _load_model(self, model_path: str):
-        if not Path(model_path).exists():
-            raise FileNotFoundError(f"Model weights not found at: {model_path}")
-
         loaded_model = torch.load(
             model_path,
             map_location=self.device,
@@ -68,291 +241,68 @@ class GC_PGE_Service:
         loaded_model.eval()
         return loaded_model
 
-    def _supports_multiomics(self, loaded_model) -> bool:
+    @staticmethod
+    def _supports_multiomics(loaded_model) -> bool:
         return all(
             hasattr(loaded_model, attr)
             for attr in ("enc_meth", "enc_cnv", "enc_snv", "fusion", "final_classifier")
         )
 
-    def _get_base_model(self, cancer_type: str):
-        model_key = cancer_type if cancer_type in self.base_model_paths else "default"
-        if model_key not in self.base_model_paths:
-            raise ValueError(f"Base model weights not configured for cancer type: {cancer_type}")
-
-        if model_key not in self.base_models:
-            self.base_models[model_key] = self._load_model(self.base_model_paths[model_key])
-            logger.info("Loaded base model: %s", model_key)
-
-        return self.base_models[model_key]
-
-    def _get_multiomics_model(self):
-        if self.multiomics_model is None:
-            if not self.multiomics_model_path:
-                raise ValueError("Multi-omics model path is not configured.")
-
-            self.multiomics_model = self._load_model(self.multiomics_model_path)
-            logger.info("Loaded master multi-omics model from: %s", self.multiomics_model_path)
-
-        return self.multiomics_model
-
-    async def predict_from_geo_file(
-        self,
-        geo_features: UploadFile,
-        static_inputs_dir: Path,
-        cancer_type: str = "default",
-        include_graph: bool = True,
-    ):
-        """
-        Runs base-model prediction with patient GEO features and static model
-        inputs stored on disk for the selected model.
-        """
-        self._validate_static_inputs(static_inputs_dir)
-
-        contents = {
-            "cancer_type": cancer_type,
-            "geo_features": await geo_features.read(),
-        }
-        for key, filename in self.STATIC_INPUT_FILENAMES.items():
-            with open(static_inputs_dir / filename, "rb") as f:
-                contents[key] = f.read()
-
-        processed_data = self._build_base_input(contents)
-        processed_data["cancer_type"] = cancer_type
-        return self.predict(processed_data, include_graph=include_graph)
-
-    async def predict_from_files(
-        self,
-        raw_files: Dict[str, Union[UploadFile, str]],
-        include_graph: bool = True,
-    ):
-        raw_files = dict(raw_files)
-        cancer_type = await self._normalize_cancer_type(raw_files.pop("cancer_type", "breast"))
-
-        contents = {
-            key: await f.read()
-            for key, f in raw_files.items()
-            if f is not None and hasattr(f, "read")
-        }
-        contents["cancer_type"] = cancer_type
-
-        has_multiomics = any(key in contents for key in self.MULTIOMICS_FILE_KEYS)
-        has_all_multiomics = all(key in contents for key in self.MULTIOMICS_FILE_KEYS)
-
-        if has_multiomics and not has_all_multiomics:
-            missing = [key for key in self.MULTIOMICS_FILE_KEYS if key not in contents]
-            raise ValueError(
-                "Multi-omics prediction requires all three optional files: "
-                + ", ".join(missing)
-            )
-
-        use_multiomics = cancer_type == "breast" and has_all_multiomics
-        folder_name = "breast_multiomics" if use_multiomics else cancer_type
-        network_dir = PROJECT_ROOT / "model_inputs" / folder_name
-        self._validate_static_inputs(network_dir)
-
-        for key, filename in self.STATIC_INPUT_FILENAMES.items():
-            with open(network_dir / filename, "rb") as f:
-                contents[key] = f.read()
-
-        processed_data = self._build_base_input(contents)
-        processed_data["cancer_type"] = cancer_type
-
-        if use_multiomics:
-            processed_data["omics"] = self._build_multiomics_input(contents)
-            logger.info("Routing breast request to multi-omics model.")
-        else:
-            logger.info("Routing %s request to base RNA model.", cancer_type)
-
-        return self.predict(processed_data, include_graph=include_graph)
-
-    async def _normalize_cancer_type(self, raw_cancer_value) -> str:
-        if isinstance(raw_cancer_value, bytes):
-            raw_cancer_type = raw_cancer_value.decode("utf-8").lower()
-        elif hasattr(raw_cancer_value, "read"):
-            raw_cancer_type = (await raw_cancer_value.read()).decode("utf-8").lower()
-        else:
-            raw_cancer_type = str(raw_cancer_value).lower()
-
-        if "melanin" in raw_cancer_type or "immunotherapy" in raw_cancer_type:
-            return "immunotherapy"
-        if "liver" in raw_cancer_type:
-            return "liver"
-        if "ovarian" in raw_cancer_type:
-            return "ovarian"
-        return "breast"
+    def _frame_to_tensor(self, frame: pd.DataFrame) -> torch.Tensor:
+        return torch.tensor(frame.values, dtype=torch.float).to(self.device)
 
     @classmethod
     def _validate_static_inputs(cls, static_inputs_dir: Path) -> None:
-        missing_files = [
-            filename
-            for filename in cls.STATIC_INPUT_FILENAMES.values()
-            if not (static_inputs_dir / filename).exists()
-        ]
+        missing_files = []
+        for input_name, filenames in cls.STATIC_INPUT_FILENAMES.items():
+            if not any((static_inputs_dir / filename).is_file() for filename in filenames):
+                missing_files.append(f"{input_name} ({' or '.join(filenames)})")
+
         if missing_files:
             raise FileNotFoundError(
                 f"Missing static model input files in {static_inputs_dir}: "
                 f"{', '.join(missing_files)}"
             )
 
-    def _build_base_input(self, contents: Dict[str, bytes]) -> dict:
-        data_sample = pd.read_csv(io.BytesIO(contents["geo_features"]), header=0)
-        anchor_genes = pd.read_csv(io.BytesIO(contents["anchor_genes"]), header=0)
-        data_x_raw = pd.read_csv(io.BytesIO(contents["node_features"]), header=0)
-
-        processed_data = {
-            "geo_features": data_sample.iloc[:, 1:],
-            "anchor_genes": anchor_genes,
-            "node_features": data_x_raw.iloc[:, 1:],
-            "ppi_edges": pd.read_csv(io.BytesIO(contents["ppi_edges"]), header=0),
-            "homolog_edges": pd.read_csv(io.BytesIO(contents["homolog_edges"]), header=0),
-        }
-
-        anchor_gene_names = self._extract_gene_names(anchor_genes)
-        processed_data["_anchor_gene_names"] = anchor_gene_names
-        processed_data["_node_names"] = self._merge_preferred_labels(
-            anchor_gene_names,
-            data_x_raw.iloc[:, 0].astype(str).tolist(),
+    def _static_input_path(self, input_name: str) -> Path:
+        for filename in self.STATIC_INPUT_FILENAMES[input_name]:
+            path = self.static_inputs_dir / filename
+            if path.is_file():
+                return path
+        raise FileNotFoundError(
+            f"Missing static model input '{input_name}' in {self.static_inputs_dir}"
         )
-        processed_data["_pathway_names"] = self._resolve_pathway_names(
-            [str(column) for column in data_x_raw.columns[1:]]
-        )
-        if "result_num" in anchor_genes.columns:
-            processed_data["_anchor_indices"] = set(
-                int(index) for index in anchor_genes.index[anchor_genes["result_num"] == 1]
+
+    def _build_multiomics_aligner(self) -> MultiOmicsGeneExpressionAligner | None:
+        expected_path = self.static_inputs_dir / "expected_geo_genes.csv"
+        medians_paths = {
+            modality: self.static_inputs_dir / filename
+            for modality, filename in (
+                MultiOmicsGeneExpressionAligner.MODALITY_MEDIAN_FILENAMES.items()
             )
-        else:
-            processed_data["_anchor_indices"] = set()
-
-        return processed_data
-
-    def _read_omics_frame(self, contents: Dict[str, bytes], key: str) -> pd.DataFrame:
-        frame = pd.read_csv(io.BytesIO(contents[key]), header=0)
-        if frame.shape[1] < 2:
-            raise ValueError(f"{key} must contain a sample-id column and at least one gene column")
-
-        frame = frame.set_index(frame.columns[0])
-        frame.index = frame.index.map(str)
-        frame.columns = frame.columns.map(str)
-        frame = frame.loc[~frame.index.duplicated(keep="first")]
-        frame = frame.loc[:, ~frame.columns.duplicated(keep="first")]
-        frame = frame.apply(pd.to_numeric, errors="coerce")
-        if frame.isnull().values.any():
-            raise ValueError(f"{key} contains non-numeric omics values")
-        return frame
-
-    def _rank_gauss_frame(self, frame: pd.DataFrame) -> pd.DataFrame:
-        max_value = frame.values.max()
-        if abs(max_value) < self.EPSILON:
-            max_value = self.EPSILON
-
-        rank_gauss = (frame.values / max_value - 0.5) * 2
-        rank_gauss = np.clip(rank_gauss, -1 + self.EPSILON, 1 - self.EPSILON)
-        rank_gauss = erfinv(rank_gauss)
-        return pd.DataFrame(rank_gauss, columns=frame.columns, index=frame.index)
-
-    def _build_multiomics_input(self, contents: Dict[str, bytes]) -> Dict[str, Union[pd.DataFrame, List[str]]]:
-        omics_frames = {
-            "data_geo_x": self._read_omics_frame(contents, "geo_features"),
-            "data_meth_x": self._read_omics_frame(contents, "meth_features"),
-            "data_cnv_x": self._read_omics_frame(contents, "cnv_features"),
-            "data_snv_x": self._read_omics_frame(contents, "snv_features"),
         }
-        node_features_raw = pd.read_csv(io.BytesIO(contents["node_features"]), header=0)
-        node_count = node_features_raw.shape[0]
-        node_gene_ids = node_features_raw.iloc[:, 0].astype(str).tolist()
+        if not expected_path.exists() or not all(path.exists() for path in medians_paths.values()):
+            return None
 
-        rna_frame = omics_frames["data_geo_x"]
-        shared_samples = set.intersection(*(set(frame.index) for frame in omics_frames.values()))
-        shared_genes = set.intersection(*(set(frame.columns) for frame in omics_frames.values()))
-        aligned_samples = [sample_id for sample_id in rna_frame.index if sample_id in shared_samples]
-        aligned_genes = [gene_id for gene_id in node_gene_ids if gene_id in shared_genes]
+        return MultiOmicsGeneExpressionAligner(
+            expected_genes_path=expected_path,
+            medians_paths=medians_paths,
+        )
 
-        if not aligned_genes:
-            aligned_genes = [gene_id for gene_id in rna_frame.columns if gene_id in shared_genes]
-        if not aligned_samples:
-            raise ValueError("No shared samples were found across the uploaded omics matrices")
-        if not aligned_genes:
-            raise ValueError("No shared genes were found across the uploaded omics matrices")
-        if len(aligned_genes) != node_count:
-            raise ValueError(
-                "Aligned omics gene count does not match the node feature count "
-                f"({len(aligned_genes)} != {node_count})"
-            )
-
-        aligned_omics = {}
-        for name, frame in omics_frames.items():
-            aligned_omics[name] = self._rank_gauss_frame(frame.loc[aligned_samples, aligned_genes])
-
-        aligned_omics["sample_ids"] = aligned_samples
-        aligned_omics["gene_ids"] = aligned_genes
-        return aligned_omics
-
-    def predict(self, raw_input: dict, include_graph: bool = True):
-        if "omics" in raw_input:
-            return self.predict_multiomics(raw_input, include_graph=include_graph)
-        return self.predict_base(raw_input, include_graph=include_graph)
-
-    def predict_base(self, raw_input: dict, include_graph: bool = True):
-        cancer_type = raw_input.get("cancer_type", "default")
-        target_model = self._get_base_model(cancer_type)
-
-        with torch.no_grad():
-            data, geo_tensor = preprocess_for_inference(raw_input)
-            data = data.to(self.device)
-            geo_tensor = geo_tensor.to(self.device)
-
-            result = target_model(data, geo_tensor)
-            if "out" in result:
-                result["prediction"] = result["out"].argmax(dim=1)
-                result["out"] = result["prediction"]
-
-            json_serializable_result = self._to_json_serializable(result)
-            self._add_structured_core_results(json_serializable_result, raw_input)
-            return self._filter_heavy_outputs(json_serializable_result, include_graph=include_graph)
-
-    def predict_multiomics(self, raw_input: dict, include_graph: bool = True):
-        with torch.no_grad():
-            data, _ = preprocess_for_inference(raw_input)
-            data = data.to(self.device)
-
-            omics = raw_input["omics"]
-            x_rna = torch.tensor(omics["data_geo_x"].values, dtype=torch.float).to(self.device)
-            x_meth = torch.tensor(omics["data_meth_x"].values, dtype=torch.float).to(self.device)
-            x_cnv = torch.tensor(omics["data_cnv_x"].values, dtype=torch.float).to(self.device)
-            x_snv = torch.tensor(omics["data_snv_x"].values, dtype=torch.float).to(self.device)
-
-            result = self._get_multiomics_model()(
-                data,
-                x_rna,
-                x_meth=x_meth,
-                x_cnv=x_cnv,
-                x_snv=x_snv,
-            )
-            if "out_multiomics" not in result:
-                raise RuntimeError("Multi-omics model did not return 'out_multiomics'")
-
-            probabilities = torch.exp(result["out_multiomics"])
-            result["out_multiomics_probabilities"] = probabilities
-            result["prediction"] = probabilities.argmax(dim=1)
-            result["sample_ids"] = omics["sample_ids"]
-            result["gene_ids"] = omics["gene_ids"]
-
-            json_serializable_result = self._to_json_serializable(result)
-            self._add_structured_core_results(json_serializable_result, raw_input)
-            return self._filter_heavy_outputs(json_serializable_result, include_graph=include_graph)
-
-    def _to_json_serializable(self, result: dict):
-        json_serializable_result = {}
+    def _to_json_serializable(self, result: dict, collapse_out: bool = False) -> dict:
+        json_result = {}
         for key, value in result.items():
             if isinstance(value, torch.Tensor):
-                json_serializable_result[key] = value.detach().cpu().tolist()
+                if collapse_out and key == "out":
+                    value = value.max(dim=1).indices
+                json_result[key] = value.detach().cpu().tolist()
             elif isinstance(value, (np.ndarray, np.generic)):
-                json_serializable_result[key] = value.tolist()
+                json_result[key] = value.tolist()
             else:
-                json_serializable_result[key] = value
-        return json_serializable_result
+                json_result[key] = value
+        return json_result
 
-    def _filter_heavy_outputs(self, result: dict, include_graph: bool):
+    def _filter_heavy_outputs(self, result: dict, include_graph: bool) -> dict:
         if include_graph or "graph" not in result:
             return result
 
@@ -363,7 +313,13 @@ class GC_PGE_Service:
             result["graph_shape"] = [rows, cols]
         else:
             result["graph_shape"] = None
+
         return result
+
+    def _add_common_metadata(self, result: dict, raw_input: dict) -> None:
+        self._add_structured_core_results(result, raw_input)
+        if "_input_alignment" in raw_input:
+            result["input_alignment"] = raw_input["_input_alignment"]
 
     def _add_structured_core_results(self, result: dict, raw_input: dict) -> None:
         node_names = raw_input.get("_node_names", [])
@@ -398,10 +354,12 @@ class GC_PGE_Service:
         result["structured_core_genes"] = structured_core_genes
         result["structured_core_pathways"] = structured_core_pathways
         result["core_genes"] = [gene["name"] for gene in structured_core_genes]
-        result["core_pathways"] = [pathway["name"] for pathway in structured_core_pathways]
+        result["core_pathways"] = [
+            pathway["name"] for pathway in structured_core_pathways
+        ]
 
     @classmethod
-    def _top_indices(cls, values: List[float]) -> List[int]:
+    def _top_indices(cls, values: list[float]) -> list[int]:
         if not values:
             return []
         return sorted(
@@ -411,20 +369,19 @@ class GC_PGE_Service:
         )[:cls.CORE_RESULT_LIMIT]
 
     @staticmethod
-    def _flatten_numeric_values(value) -> List[float]:
+    def _flatten_numeric_values(value) -> list[float]:
         if value is None:
             return []
-        array = np.asarray(value, dtype=float).reshape(-1)
-        return array.tolist()
+        return np.asarray(value, dtype=float).reshape(-1).tolist()
 
     @staticmethod
-    def _label_at(labels: List[str], index: int, fallback: str) -> str:
+    def _label_at(labels: list[str], index: int, fallback: str) -> str:
         if index < len(labels) and labels[index]:
             return labels[index]
         return fallback
 
     @classmethod
-    def _extract_gene_names(cls, anchor_genes: pd.DataFrame) -> List[str]:
+    def _extract_gene_names(cls, anchor_genes: pd.DataFrame) -> list[str]:
         if anchor_genes.empty:
             return []
 
@@ -454,13 +411,14 @@ class GC_PGE_Service:
             values = anchor_genes[column].fillna("").astype(str).str.strip()
             if not cls._looks_like_numeric_ids(values):
                 return values.tolist()
+
         return []
 
     @staticmethod
     def _merge_preferred_labels(
-        preferred_labels: List[str],
-        fallback_labels: List[str],
-    ) -> List[str]:
+        preferred_labels: list[str],
+        fallback_labels: list[str],
+    ) -> list[str]:
         label_count = max(len(preferred_labels), len(fallback_labels))
         labels = []
         for index in range(label_count):
@@ -482,7 +440,7 @@ class GC_PGE_Service:
         return numeric_ratio >= 0.95
 
     @staticmethod
-    def _load_pathway_id_labels(path: Path) -> List[str]:
+    def _load_pathway_id_labels(path: Path) -> list[str]:
         if not path.exists():
             return []
 
@@ -495,7 +453,7 @@ class GC_PGE_Service:
             labels[int(row["id"])] = str(row["pwid"])
         return labels
 
-    def _resolve_pathway_names(self, uploaded_names: List[str]) -> List[str]:
+    def _resolve_pathway_names(self, uploaded_names: list[str]) -> list[str]:
         if len(self.pathway_id_labels) >= len(uploaded_names):
             return self.pathway_id_labels[:len(uploaded_names)]
         return uploaded_names

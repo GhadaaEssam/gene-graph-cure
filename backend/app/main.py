@@ -5,6 +5,7 @@ from app.db.models import Base
 from app.api.v1 import predict, jobs, analysis , auth , chat , dashboard , graph
 
 
+# run: uvicorn app.main:app --reload
 app = FastAPI()
 
 from fastapi.middleware.cors import CORSMiddleware

@@ -30,7 +30,10 @@ class ModelServiceRegistry:
                 if not model_path.exists():
                     raise FileNotFoundError(f"Model weights not found: {model_path}")
 
-                self.services[normalized_key] = GC_PGE_Service(str(model_path))
+                self.services[normalized_key] = GC_PGE_Service(
+                    model_path=str(model_path),
+                    static_inputs_dir=self.get_static_inputs_dir(normalized_key),
+                )
 
             return self.services[normalized_key]
 

@@ -7,9 +7,18 @@ venv/
 __pycache__/
 *.pt
 *.pth
+<<<<<<< HEAD
 D:\uni\Grad project\Predicting drug resistance\gene-graph-cure\dummy_input.json
 data/
 tests/
 ipynb_checkpoints/
 docs/
 model_inputs/
+=======
+backend/model_inputs/
+data/
+tests/
+ipynb_checkpoints/
+backend/model_inputs/
+backend/weights/
+>>>>>>> origin/input_aligner
