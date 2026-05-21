@@ -8,3 +8,8 @@ __pycache__/
 *.pt
 *.pth
 backend/model_inputs/
+data/
+tests/
+ipynb_checkpoints/
+backend/model_inputs/
+backend/weights/

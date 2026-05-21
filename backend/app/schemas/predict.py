@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict, Field
-from typing import List, Optional, Union
+from typing import List, Any, Union, Optional
 from enum import Enum
 
 class ModelKey(str, Enum):
@@ -31,14 +31,14 @@ class PredictionResult(BaseModel):
     # Keeping the others as they were
     out: List[int]
     cor: List[float]
-    graph: List[List[float]]
+    graph: Optional[List[List[float]]] = None
+    graph_shape: Optional[List[int]] = None
     pw_w: List[float]
     vimp_g: List[float]
     temp: List[List[float]]
-    structured_core_genes: List[CoreGene] = Field(default_factory=list)
-    structured_core_pathways: List[CorePathway] = Field(default_factory=list)
-    core_genes: List[str] = Field(default_factory=list)
-    core_pathways: List[str] = Field(default_factory=list)
+    out_multiomics: Optional[List[List[float]]] = None
+    out_multiomics_probabilities: Optional[List[List[float]]] = None
+    prediction: Optional[List[int]] = None
         
 class JobStatus(str, Enum):
     PENDING = "PENDING"
