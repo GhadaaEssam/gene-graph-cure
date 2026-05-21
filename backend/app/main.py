@@ -5,6 +5,7 @@ from app.db.models import Base
 from app.api.v1 import predict, jobs, analyses
 
 
+# run: uvicorn app.main:app --reload
 app = FastAPI()
 
 app.include_router(predict.router)
