@@ -72,11 +72,21 @@ class GC_PGE_Service:
         files_dict: Mapping[str, object],
         include_graph: bool = True,
     ):
-        contents = {
-            key: await uploaded_file.read()
-            for key, uploaded_file in files_dict.items()
-            if uploaded_file is not None
-        }
+        contents: dict[str, bytes] = {}
+
+        for key, uploaded_file in files_dict.items():
+
+            if key == "cancer_type":
+                continue
+
+            if uploaded_file is None:
+                continue
+
+            if hasattr(uploaded_file, "read"):
+                contents[key] = await uploaded_file.read()
+            else:
+                raise ValueError(f"Invalid file type for {key}: expected UploadFile")
+            
         if "geo_features" not in contents:
             raise ValueError("geo_features file is required")
 
@@ -292,14 +302,21 @@ class GC_PGE_Service:
     def _to_json_serializable(self, result: dict, collapse_out: bool = False) -> dict:
         json_result = {}
         for key, value in result.items():
+            # if isinstance(value, torch.Tensor):
+            #     if collapse_out and key == "out":
+            #         value = value.max(dim=1).indices
+            #     json_result[key] = value.detach().cpu().tolist()
+            # elif isinstance(value, (np.ndarray, np.generic)):
+            #     json_result[key] = value.tolist()
+            # else:
+            #     json_result[key] = value
             if isinstance(value, torch.Tensor):
                 if collapse_out and key == "out":
+                    probabilities = torch.exp(value)
+                    json_result["out_probabilities"] = probabilities.detach().cpu().tolist()
                     value = value.max(dim=1).indices
+
                 json_result[key] = value.detach().cpu().tolist()
-            elif isinstance(value, (np.ndarray, np.generic)):
-                json_result[key] = value.tolist()
-            else:
-                json_result[key] = value
         return json_result
 
     def _filter_heavy_outputs(self, result: dict, include_graph: bool) -> dict:

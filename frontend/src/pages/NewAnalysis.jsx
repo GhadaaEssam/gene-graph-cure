@@ -48,12 +48,19 @@ const handleRunAnalysis = async () => {
 
   try {
     const formData = new FormData();
+
     formData.append("cancerType", cancerType);
     formData.append("mainFile", files.main);
 
-    if (files.mutation) formData.append("mutationFile", files.mutation);
-    if (files.cnv) formData.append("cnvFile", files.cnv);
-    if (files.meth) formData.append("methFile", files.meth);
+    // // 🔥 MUST MATCH BACKEND FIELD NAMES
+    // if (files.meth) formData.append("meth_features", files.meth);
+    // if (files.cnv) formData.append("cnv_features", files.cnv);
+    // if (files.mutation) formData.append("snv_features", files.mutation);
+
+    formData.append("geo_features", files.main);
+    if (files.mutation) formData.append("snv_features", files.mutation);
+    if (files.cnv) formData.append("cnv_features", files.cnv);
+    if (files.meth) formData.append("meth_features", files.meth);
 
     const response = await runAnalysis(formData);
 
@@ -129,9 +136,10 @@ const handleRunAnalysis = async () => {
                 onChange={(e) => setCancerType(e.target.value)}
               >
                 <option>Select a cancer type</option>
-                <option value="Melanoma">Melanoma</option>
-                <option value="Ovarian Cancer">Ovarian Cancer</option>
+                <option value="Immunotherapy">Immunotherapy</option>
+                <option value="Ovarian">Ovarian</option>
                 <option value="Liver Cancer">Liver Cancer</option>
+                <option value="Breast">Breast Cancer</option>
               </Form.Select>
             </Form.Group>
 
