@@ -113,3 +113,93 @@ def run_ai(base_path):
         "evidence": evidence,
         "explanation": explanation
     }
+    
+# =========================
+# 🔹 LIVE CHAT FROM ANALYSIS
+# =========================
+
+def ask_ai_from_analysis(question: str, analysis_result: dict):
+
+    # -------------------------
+    # Extract important features
+    # -------------------------
+
+    top_genes = []
+    top_pathways = []
+
+    # genes
+    if "graph" in analysis_result and "gene_names" in analysis_result:
+        top_genes = get_top_genes_from_graph(
+            analysis_result["graph"],
+            analysis_result["gene_names"]
+        )
+
+    # pathways
+    if "pw_w" in analysis_result and "pathway_names" in analysis_result:
+        top_pathways = get_top_pathways(
+            analysis_result["pw_w"],
+            analysis_result["pathway_names"]
+        )
+
+    # -------------------------
+    # Build RAG evidence
+    # -------------------------
+
+    rag_context = ""
+
+    try:
+        if "graph" in analysis_result and "anchor_df" in analysis_result:
+
+            rag = RAGService()
+
+            vimp_g = build_vimp_from_graph(
+                analysis_result["graph"]
+            )
+
+            evidence = rag.generate_evidence(
+                {"vimp_g": vimp_g},
+                analysis_result["anchor_df"]
+            )
+
+            rag_context = format_evidence(evidence)
+
+    except Exception as e:
+        print("RAG ERROR:", e)
+
+    # -------------------------
+    # Build final prompt
+    # -------------------------
+
+    prompt = f"""
+You are an expert biomedical AI assistant.
+
+Patient analysis summary:
+
+Prediction:
+{analysis_result.get("prediction")}
+
+Confidence:
+{analysis_result.get("confidence")}
+
+Top Pathways:
+{top_pathways}
+
+Top Genes:
+{top_genes}
+
+Scientific Evidence:
+{rag_context}
+
+User Question:
+{question}
+
+Provide a medically accurate explanation in clear language.
+"""
+
+    # -------------------------
+    # Generate response
+    # -------------------------
+
+    response = generate_text(prompt)
+
+    return response

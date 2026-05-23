@@ -3,6 +3,7 @@ import { Container, Card, Form, Row, Col} from "react-bootstrap";
 import { FaRobot, FaUser, FaPaperPlane } from "react-icons/fa6";
 // استيراد الـ API
 import { sendChatMessage } from "../api/chat.api";
+import { useLocation } from "react-router-dom";
 
 function ChatAssistant() {
   const [messages, setMessages] = useState([]);
@@ -10,6 +11,11 @@ function ChatAssistant() {
   // حالة جديدة عشان نظهر إن البوت بيكتب
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef(null);
+  const location = useLocation();
+  const locationJobId = location.state?.job_id;
+  const [activeJobId, setActiveJobId] = useState(
+    () => locationJobId || localStorage.getItem("currentJobId") || null
+  );
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -18,6 +24,13 @@ function ChatAssistant() {
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]); // ضفنا isTyping عشان ينزل لتحت وهو بيكتب برضه
+
+  useEffect(() => {
+    if (!locationJobId) return;
+
+    localStorage.setItem("currentJobId", locationJobId);
+    setActiveJobId(locationJobId);
+  }, [locationJobId]);
 
   const handleSendMessage = async (text) => {
     if (!text.trim()) return;
@@ -34,7 +47,12 @@ function ChatAssistant() {
 
     try {
       // 3. إرسال الرسالة للـ API الوهمي
-      const response = await sendChatMessage(text);
+      const response = await sendChatMessage(text, activeJobId);
+
+      if (response.job_id) {
+        localStorage.setItem("currentJobId", response.job_id);
+        setActiveJobId(response.job_id);
+      }
       
       // 4. استلام الرد وإضافته
       const newBotMsg = { 

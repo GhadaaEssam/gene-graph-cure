@@ -64,6 +64,10 @@ const handleRunAnalysis = async () => {
 
     const response = await runAnalysis(formData);
 
+    if (response?.job_id) {
+      localStorage.setItem("currentJobId", response.job_id);
+    }
+
     navigate(`/results/${response.job_id}`, {
       state: {
         job_id: response.job_id,

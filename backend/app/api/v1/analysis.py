@@ -122,19 +122,13 @@ async def run_analysis(
             prediction_result=str(prediction_value),
             confidence_score=confidence
         )
-        new_prediction = PredictionHistory(
-            user_id=current_user.id,
-            analysis_code=job_id,
-            cancer_type=cancerType,
-            prediction_result=str(prediction_value),
-            confidence_score=confidence,
-        )
 
         db.add(new_prediction)
         db.flush()
 
         # ------------------ PATHWAYS ------------------
         pathways = []
+
         for p in result.get("structured_core_pathways", []):
             pathways.append({
                 "name": p.get("name", "Unknown"),
@@ -142,16 +136,29 @@ async def run_analysis(
                 "genes": []
             })
 
+
+        # ------------------ GENES ------------------
+        genes = []
+
+        for g in result.get("structured_core_genes", []):
+            genes.append({
+                "name": g.get("name", "Unknown"),
+                "score": float(g.get("score", 0)),
+            })
+            
         # ------------------ SAVE DETAILS ------------------
         new_details = PredictionDetails(
-            prediction_id=new_prediction.id,
             pathways=pathways,
+            genes=genes,
             alternative_drugs=["Recommended targeted therapy"],
             interpretation="Real GC-PGE prediction completed successfully.",
         )
 
-        db.add(new_details)
+        # LINK RELATIONSHIP
+        new_prediction.details = new_details
+        db.add(new_prediction)
         db.commit()
+        db.refresh(new_prediction)
 
         return {"job_id": job_id}
 
@@ -181,6 +188,7 @@ async def get_result(
         "cancerType": record.cancer_type,
         "riskScore": int(record.confidence_score * 100) if record.confidence_score else 0,
         "pathways": record.details.pathways if record.details else [],
+        "genes": record.details.genes if record.details else [],
         "interpretation": record.details.interpretation if record.details else "Pending AI interpretation...",
         "alternatives": record.details.alternative_drugs if record.details else []
     }

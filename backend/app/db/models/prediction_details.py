@@ -11,6 +11,7 @@ class PredictionDetails(Base):
     last_synced = Column(DateTime, default=datetime.utcnow)
     core_genes = Column(JSON) 
     pathways = Column(JSON) 
+    genes = Column(JSON)
     alternative_drugs = Column(JSON) 
     interpretation = Column(Text)
 

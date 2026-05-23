@@ -27,6 +27,12 @@ function Results() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  useEffect(() => {
+    if (job_id) {
+      localStorage.setItem("currentJobId", job_id);
+    }
+  }, [job_id]);
+
   // ---------------- FETCH RESULTS ----------------
   useEffect(() => {
     const fetchResults = async () => {
@@ -225,7 +231,9 @@ function Results() {
               <Button
                 variant="outline-secondary"
                 className="w-100 mb-2"
-                onClick={() => navigate("/chat")}
+                onClick={() => navigate("/chat", {
+                                state: { job_id }
+                              })}
               >
                 Ask AI
               </Button>
