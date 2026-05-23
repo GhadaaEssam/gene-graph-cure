@@ -1,0 +1,20 @@
+
+backend/
+└── adrs/
+    ├── __init__.py
+    ├── api.py                ← FastAPI router (HTTP endpoints)
+    ├── models.py             ← Pydantic request/response schemas
+    ├── db_parser.py          ← DrugBank XML + GDSC CSV parsers
+    ├── db_tables.py          ← SQLAlchemy ORM models
+    ├── graph_builder.py      ← NetworkX knowledge graph
+    ├── pathway_mapper.py     ← ΔE extraction + pathway name translation
+    ├── scoring.py            ← SD formula component functions
+    ├── recommender.py        ← Main pipeline orchestrator
+    ├── normalizer.py         ← ΔE min-max normalization
+    ├── gcpge_adapter.py      ← GC-PGE output → ADRS input translation
+    ├── cache.py              ← PostgreSQL read/write layer (Local fallback + DB cache)
+    ├── setup_data.py         ← One-time data parsing script
+    └── data/
+        ├── drugbank_index.json    ← 14,847 small molecule drugs
+        ├── gdsc_index.json        ← 273 drugs with IC50 profiles
+        └── pw_id.csv              ← 3,090 pathway ID → name mapping
