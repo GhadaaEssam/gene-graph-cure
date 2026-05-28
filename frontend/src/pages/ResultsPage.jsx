@@ -12,10 +12,7 @@ import { Link, useParams, useNavigate } from "react-router-dom";
 import {
   FaArrowLeft,
   FaTriangleExclamation,
-  FaDownload,
-  FaShareNodes,
   FaNetworkWired,
-  FaRegMessage,
 } from "react-icons/fa6";
 import { getAnalysisResult } from "../api/analysisApi";
 
@@ -96,6 +93,18 @@ function Results() {
     );
   }
 
+  const recommendations = (
+    data.adrsRecommendations?.length
+      ? data.adrsRecommendations
+      : data.alternatives || []
+  )
+    .map((item) => (
+      typeof item === "string"
+        ? { drug_name: item }
+        : item
+    ))
+    .filter((item) => item?.drug_name || item?.name);
+
   // ---------------- UI ----------------
   return (
     <div className="results-page py-4">
@@ -146,6 +155,33 @@ function Results() {
 
         .custom-progress {
           height: 6px;
+        }
+
+        .recommendation-item {
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 14px;
+          height: 100%;
+          background: #ffffff;
+        }
+
+        .recommendation-score {
+          background-color: #ecfeff;
+          color: #0f766e;
+          border: 1px solid #99f6e4;
+          border-radius: 999px;
+          padding: 3px 8px;
+          font-size: 0.75rem;
+          font-weight: 700;
+        }
+
+        .recommendation-chip {
+          background-color: #f1f5f9;
+          border-radius: 999px;
+          display: inline-block;
+          font-size: 0.72rem;
+          margin: 3px 4px 0 0;
+          padding: 3px 8px;
         }
       `}</style>
 
@@ -265,15 +301,72 @@ function Results() {
 
         {/* ALTERNATIVES */}
         <Card className="custom-card p-4">
-          <h5>Alternative Treatments</h5>
+          <div className="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-3">
+            <div>
+              <h5 className="mb-1">ADRS Drug Recommendations</h5>
+              <span className="text-muted">
+                Resistant drug: {data.resistantDrug || "Unknown"}
+              </span>
+            </div>
+            {recommendations.length > 0 && (
+              <Badge bg="success">{recommendations.length} found</Badge>
+            )}
+          </div>
 
-          <Row>
-            {data.alternatives?.map((a, i) => (
-              <Col md={6} key={i} className="mb-2">
-                <div className="border p-2 rounded">{a}</div>
-              </Col>
-            ))}
-          </Row>
+          {recommendations.length > 0 ? (
+            <Row className="g-3">
+              {recommendations.map((drug, i) => (
+                <Col md={6} key={`${drug.drug_name || drug.name}-${i}`}>
+                  <div className="recommendation-item">
+                    <div className="d-flex justify-content-between gap-3 mb-2">
+                      <strong>{drug.drug_name || drug.name}</strong>
+                      {drug.sd_score !== undefined && (
+                        <span className="recommendation-score">
+                          {(Number(drug.sd_score) * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+
+                    {drug.mechanism_of_action && (
+                      <p className="text-muted mb-2" style={{ fontSize: "0.86rem" }}>
+                        {drug.mechanism_of_action}
+                      </p>
+                    )}
+
+                    {drug.targeted_genes?.length > 0 && (
+                      <div className="mb-2">
+                        <small className="fw-bold text-secondary">Genes</small>
+                        <div>
+                          {drug.targeted_genes.slice(0, 6).map((gene) => (
+                            <span key={gene} className="recommendation-chip">
+                              {gene}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {drug.targeted_pathways?.length > 0 && (
+                      <div>
+                        <small className="fw-bold text-secondary">Pathways</small>
+                        <div>
+                          {drug.targeted_pathways.slice(0, 4).map((pathway) => (
+                            <span key={pathway} className="recommendation-chip">
+                              {pathway}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </Col>
+              ))}
+            </Row>
+          ) : (
+            <p className="text-muted mb-0">
+              ADRS did not return drug recommendations for this analysis.
+            </p>
+          )}
         </Card>
       </Container>
     </div>

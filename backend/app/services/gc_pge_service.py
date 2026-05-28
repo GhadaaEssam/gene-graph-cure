@@ -1,4 +1,5 @@
 import io
+import logging
 import sys
 from pathlib import Path
 from typing import Mapping
@@ -22,8 +23,12 @@ from app.services.gene_expression_aligner import (
 from gcpge.preprocess import preprocess_for_inference
 
 
+logger = logging.getLogger(__name__)
+
+
 class GC_PGE_Service:
     CORE_RESULT_LIMIT = 10
+    ALIGNMENT_EXAMPLE_LIMIT = 5
     MULTIOMICS_FILE_KEYS = ("meth_features", "cnv_features", "snv_features")
     STATIC_INPUT_FILENAMES = {
         "anchor_genes": ("anchor_genes.csv",),
@@ -52,9 +57,11 @@ class GC_PGE_Service:
         self.pathway_id_labels = self._load_pathway_id_labels(
             PROJECT_ROOT / "gcpge" / "pw_id.csv"
         )
+        self.gene_identifier_aliases = self._load_gene_identifier_aliases()
         self.gene_aligner = GeneExpressionAligner(
             expected_genes_path=self._static_input_path("expected_geo_genes"),
             medians_path=self._static_input_path("geo_gene_medians"),
+            gene_aliases=self.gene_identifier_aliases,
         )
         self.multiomics_aligner = self._build_multiomics_aligner()
 
@@ -178,7 +185,9 @@ class GC_PGE_Service:
             averaged["prediction"] = probabilities.argmax(dim=1)
             averaged["sample_ids"] = omics["sample_ids"]
             averaged["gene_ids"] = omics["gene_ids"]
-            averaged["multiomics_alignment"] = omics["alignment_report"]
+            averaged["multiomics_alignment"] = self._summarize_alignment_report(
+                omics["alignment_report"]
+            )
 
             json_result = self._to_json_serializable(averaged, collapse_out=True)
             self._add_common_metadata(json_result, raw_input)
@@ -186,7 +195,17 @@ class GC_PGE_Service:
 
     def _build_base_input(self, contents: Mapping[str, bytes]) -> dict:
         data_sample = pd.read_csv(io.BytesIO(contents["geo_features"]), header=0)
+        logger.info(
+            "Uploaded GEO table summary: shape=%s columns_sample=%s",
+            data_sample.shape,
+            [str(column) for column in data_sample.columns[:5]],
+        )
+
         aligned_geo, alignment_report = self.gene_aligner.align(data_sample)
+        logger.info(
+            "GEO alignment summary: %s",
+            self._summarize_alignment_report(alignment_report),
+        )
 
         anchor_genes = pd.read_csv(self._static_input_path("anchor_genes"), header=0)
         data_x_raw = pd.read_csv(self._static_input_path("node_features"), header=0)
@@ -229,6 +248,10 @@ class GC_PGE_Service:
                 "cnv": pd.read_csv(io.BytesIO(contents["cnv_features"]), header=0),
                 "snv": pd.read_csv(io.BytesIO(contents["snv_features"]), header=0),
             }
+        )
+        logger.info(
+            "Multi-omics alignment summary: %s",
+            self._summarize_alignment_report(alignment_report),
         )
 
         return {
@@ -297,7 +320,33 @@ class GC_PGE_Service:
         return MultiOmicsGeneExpressionAligner(
             expected_genes_path=expected_path,
             medians_paths=medians_paths,
+            gene_aliases=self.gene_identifier_aliases,
         )
+
+    def _load_gene_identifier_aliases(self) -> dict[str, str]:
+        anchor_path = self._static_input_path("anchor_genes")
+        anchor_genes = pd.read_csv(anchor_path, header=0)
+        if not {"id", "gene"}.issubset(anchor_genes.columns):
+            logger.info(
+                "No alternate gene identifier aliases found in %s",
+                anchor_path.name,
+            )
+            return {}
+
+        aliases: dict[str, str] = {}
+        for _, row in anchor_genes.iterrows():
+            identifier = self._clean_gene_identifier(row.get("id"))
+            gene = self._clean_gene_identifier(row.get("gene"))
+            if identifier and gene and identifier != gene:
+                aliases[identifier] = gene
+
+        logger.info(
+            "Loaded gene identifier aliases: count=%d source=%s sample=%s",
+            len(aliases),
+            anchor_path.name,
+            list(aliases.items())[: self.ALIGNMENT_EXAMPLE_LIMIT],
+        )
+        return aliases
 
     def _to_json_serializable(self, result: dict, collapse_out: bool = False) -> dict:
         json_result = {}
@@ -336,7 +385,57 @@ class GC_PGE_Service:
     def _add_common_metadata(self, result: dict, raw_input: dict) -> None:
         self._add_structured_core_results(result, raw_input)
         if "_input_alignment" in raw_input:
-            result["input_alignment"] = raw_input["_input_alignment"]
+            result["input_alignment"] = self._summarize_alignment_report(
+                raw_input["_input_alignment"]
+            )
+
+    @classmethod
+    def _summarize_alignment_report(cls, report: dict) -> dict:
+        if not isinstance(report, dict):
+            return {}
+
+        if "reports" in report:
+            return {
+                "modalities": report.get("modalities", []),
+                "sample_counts": report.get("sample_counts", {}),
+                "reports": {
+                    modality: cls._summarize_alignment_report(modality_report)
+                    for modality, modality_report in report.get("reports", {}).items()
+                },
+            }
+
+        summary = {
+            key: report.get(key)
+            for key in (
+                "orientation",
+                "gene_axis_name",
+                "expected_genes",
+                "uploaded_genes",
+                "matched_genes",
+                "missing_genes",
+                "extra_genes",
+                "match_rate",
+                "fill_strategy",
+                "min_match_rate",
+                "identifier_aliases",
+            )
+            if key in report
+        }
+
+        for key in ("matched_gene_names", "missing_gene_names", "extra_gene_names"):
+            names = report.get(key)
+            if isinstance(names, list):
+                summary[f"{key}_count"] = len(names)
+                summary[f"{key}_sample"] = names[:cls.ALIGNMENT_EXAMPLE_LIMIT]
+
+        duplicate_genes = report.get("duplicate_genes")
+        if isinstance(duplicate_genes, dict):
+            summary["duplicate_gene_count"] = len(duplicate_genes)
+            summary["duplicate_gene_sample"] = dict(
+                list(duplicate_genes.items())[:cls.ALIGNMENT_EXAMPLE_LIMIT]
+            )
+
+        return summary
 
     def _add_structured_core_results(self, result: dict, raw_input: dict) -> None:
         node_names = raw_input.get("_node_names", [])
@@ -469,6 +568,12 @@ class GC_PGE_Service:
         for _, row in pathway_ids.iterrows():
             labels[int(row["id"])] = str(row["pwid"])
         return labels
+
+    @staticmethod
+    def _clean_gene_identifier(value) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value).strip()
 
     def _resolve_pathway_names(self, uploaded_names: list[str]) -> list[str]:
         if len(self.pathway_id_labels) >= len(uploaded_names):

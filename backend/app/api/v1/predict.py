@@ -51,8 +51,8 @@ async def predict(
     geo_features: UploadFile = File(...),
     model: ModelKey = Form(...),
     include_graph: bool = Query(
-        True,
-        description="Return the full learned graph matrix. Set false for faster responses.",
+        False,
+        description="Return the full learned graph matrix. Disabled by default to avoid huge responses.",
     ),
     meth_features: Optional[UploadFile] = File(None),
     cnv_features: Optional[UploadFile] = File(None),

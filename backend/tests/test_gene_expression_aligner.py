@@ -73,6 +73,69 @@ class GeneExpressionAlignerTest(unittest.TestCase):
             ])
             self.assertEqual(report["duplicate_genes"], {"A": 2})
 
+    def test_aligns_ensembl_aliases_to_symbol_contract(self):
+        with aligner_for(
+            ["SAMD11", "KLHL17", "TTLL10"],
+            {"SAMD11": 10, "KLHL17": 20, "TTLL10": 30},
+            gene_aliases={
+                "ENSG00000187634": "SAMD11",
+                "ENSG00000187961": "KLHL17",
+                "ENSG00000162571": "TTLL10",
+            },
+        ) as aligner:
+            uploaded = pd.DataFrame(
+                {
+                    "Unnamed: 0": ["GSM1"],
+                    "ENSG00000187634.15": [1],
+                    "ENSG00000187961": [2],
+                    "ENSG00000162571": [3],
+                }
+            )
+
+            aligned, report = aligner.align(uploaded)
+
+            self.assertEqual(list(aligned.columns), ["SAMD11", "KLHL17", "TTLL10"])
+            self.assertEqual(aligned.to_dict("records"), [
+                {"SAMD11": 1, "KLHL17": 2, "TTLL10": 3},
+            ])
+            self.assertEqual(report["matched_genes"], 3)
+            self.assertEqual(report["match_rate"], 1.0)
+            self.assertEqual(report["identifier_aliases"], 3)
+
+    def test_real_liver_training_headers_align_through_anchor_aliases(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        liver_dir = backend_dir / "model_inputs" / "liver"
+        aliases = load_anchor_aliases(liver_dir / "anchor_genes.csv")
+        aligner = GeneExpressionAligner(
+            expected_genes_path=liver_dir / "expected_geo_genes.csv",
+            medians_path=liver_dir / "geo_gene_medians.csv",
+            gene_aliases=aliases,
+        )
+        uploaded = pd.read_csv(liver_dir / "training_data.csv", nrows=2)
+
+        aligned, report = aligner.align(uploaded)
+
+        self.assertEqual(aligned.shape, (2, 6914))
+        self.assertEqual(report["matched_genes"], 6914)
+        self.assertEqual(report["match_rate"], 1.0)
+        self.assertEqual(list(aligned.columns[:3]), ["SAMD11", "KLHL17", "TTLL10"])
+
+    def test_real_ovarian_training_headers_still_align_directly(self):
+        backend_dir = Path(__file__).resolve().parents[1]
+        ovarian_dir = backend_dir / "model_inputs" / "ovarian"
+        aligner = GeneExpressionAligner(
+            expected_genes_path=ovarian_dir / "expected_geo_genes.csv",
+            medians_path=ovarian_dir / "geo_gene_medians.csv",
+        )
+        uploaded = pd.read_csv(ovarian_dir / "training_data.csv", nrows=2)
+
+        aligned, report = aligner.align(uploaded)
+
+        self.assertEqual(aligned.shape, (2, 7762))
+        self.assertEqual(report["matched_genes"], 7762)
+        self.assertEqual(report["match_rate"], 1.0)
+        self.assertEqual(list(aligned.columns[:3]), ["TNMD", "DPM1", "FGR"])
+
     def test_validation_rejects_upload_below_match_threshold(self):
         with aligner_for(
             ["A", "B", "C", "D"],
@@ -186,10 +249,12 @@ class aligner_for:
         expected_genes: list[str],
         medians: dict[str, float],
         min_match_rate: float = 0.0,
+        gene_aliases: dict[str, str] | None = None,
     ) -> None:
         self.expected_genes = expected_genes
         self.medians = medians
         self.min_match_rate = min_match_rate
+        self.gene_aliases = gene_aliases
         self.temp_dir = tempfile.TemporaryDirectory()
 
     def __enter__(self) -> GeneExpressionAligner:
@@ -209,6 +274,7 @@ class aligner_for:
             expected_genes_path=expected_path,
             medians_path=medians_path,
             min_match_rate=self.min_match_rate,
+            gene_aliases=self.gene_aliases,
         )
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
@@ -251,6 +317,16 @@ class multiomics_aligner_for:
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         self.temp_dir.cleanup()
+
+
+def load_anchor_aliases(anchor_path: Path) -> dict[str, str]:
+    anchor_genes = pd.read_csv(anchor_path)
+    return dict(
+        zip(
+            anchor_genes["id"].astype(str).str.strip(),
+            anchor_genes["gene"].astype(str).str.strip(),
+        )
+    )
 
 
 if __name__ == "__main__":

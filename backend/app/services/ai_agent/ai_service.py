@@ -3,8 +3,12 @@ from .prompt_builder import build_prompt
 from .llm_client import generate_text
 from app.services.rag_service import RAGService
 
+import logging
 import pandas as pd
 import numpy as np
+
+
+logger = logging.getLogger(__name__)
 
 
 # =========================
@@ -164,7 +168,7 @@ def ask_ai_from_analysis(question: str, analysis_result: dict):
             rag_context = format_evidence(evidence)
 
     except Exception as e:
-        print("RAG ERROR:", e)
+        logger.warning("RAG generation failed during analysis chat: %s", e)
 
     # -------------------------
     # Build final prompt

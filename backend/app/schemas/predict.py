@@ -32,7 +32,7 @@ class PredictionRequest(BaseModel):
 
     model: ModelKey
     geo_features: Any
-    include_graph: bool = True
+    include_graph: bool = False
 
     meth_features: Optional[Any] = None
     cnv_features: Optional[Any] = None

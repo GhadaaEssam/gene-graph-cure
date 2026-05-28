@@ -14,6 +14,7 @@ function NewAnalysis() {
   const navigate = useNavigate();
 
   const [cancerType, setCancerType] = useState("");
+  const [resistantDrug, setResistantDrug] = useState("");
   const [files, setFiles] = useState({
     main: null,
     mutation: null,
@@ -34,6 +35,8 @@ function NewAnalysis() {
     }
   };
 const handleRunAnalysis = async () => {
+  if (isAnalyzing) return;
+
   if (!cancerType || cancerType === "Select a cancer type") {
     alert("Please select a cancer type first.");
     return;
@@ -50,6 +53,7 @@ const handleRunAnalysis = async () => {
     const formData = new FormData();
 
     formData.append("cancerType", cancerType);
+    formData.append("resistantDrug", resistantDrug.trim() || "Unknown");
     formData.append("mainFile", files.main);
 
     // // 🔥 MUST MATCH BACKEND FIELD NAMES
@@ -64,9 +68,13 @@ const handleRunAnalysis = async () => {
 
     const response = await runAnalysis(formData);
 
-    if (response?.job_id) {
-      localStorage.setItem("currentJobId", response.job_id);
+    if (!response?.job_id) {
+      console.error(response);
+      alert(response?.detail || "Analysis failed.");
+      return;
     }
+
+    localStorage.setItem("currentJobId", response.job_id);
 
     navigate(`/results/${response.job_id}`, {
       state: {
@@ -148,6 +156,19 @@ const handleRunAnalysis = async () => {
             </Form.Group>
 
             <Form.Group className="mb-3">
+              <Form.Label className="fw-bold text-dark" style={{ fontSize: "0.85rem" }}>
+                Resistant Drug <span className="text-secondary fw-normal">(optional)</span>
+              </Form.Label>
+              <Form.Control
+                className="bg-light border-0 shadow-sm"
+                style={{ padding: "8px 12px", fontSize: "0.9rem" }}
+                placeholder="e.g., Erlotinib"
+                value={resistantDrug}
+                onChange={(e) => setResistantDrug(e.target.value)}
+              />
+            </Form.Group>
+
+            <Form.Group className="mb-3">
               <Form.Label className="fw-bold text-dark" style={{ fontSize: "0.85rem" }}>Genomic Data File <span className="text-danger">*</span></Form.Label>
               <div className={`upload-area main-upload-area ${files.main ? 'active' : ''}`} onClick={() => handleUploadClick(mainFileRef)}>
                 {files.main ? (
@@ -200,7 +221,7 @@ const handleRunAnalysis = async () => {
               </div>
             </div>
 
-            <Button className="btn-run-analysis mt-1" onClick={handleRunAnalysis} disabled={isAnalyzing}>
+            <Button type="button" className="btn-run-analysis mt-1" onClick={handleRunAnalysis} disabled={isAnalyzing}>
               {isAnalyzing ? (
                 <><Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" /> Analyzing Data...</>
               ) : (

@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Hashable, Mapping, Literal
 
 import pandas as pd
 
+
+logger = logging.getLogger(__name__)
 
 Orientation = Literal["genes_as_columns", "genes_as_rows"]
 
@@ -32,6 +35,7 @@ class GeneExpressionAligner:
         medians_path: str | Path,
         min_match_rate: float = 0.7,
         omics_name: str = "GEO",
+        gene_aliases: Mapping[str, str] | None = None,
     ) -> None:
         self.expected_genes_path = Path(expected_genes_path)
         self.medians_path = Path(medians_path)
@@ -39,9 +43,10 @@ class GeneExpressionAligner:
         self.omics_name = omics_name
 
         self.expected_genes = self._load_expected_genes(self.expected_genes_path)
-        self.normalized_expected = {
-            self._normalize_name(gene): gene for gene in self.expected_genes
-        }
+        self.normalized_expected, self.alias_count = self._build_identifier_lookup(
+            self.expected_genes,
+            gene_aliases or {},
+        )
         self.medians = self._load_medians(self.medians_path)
         missing_medians = [
             gene for gene in self.expected_genes if gene not in self.medians
@@ -52,6 +57,14 @@ class GeneExpressionAligner:
                 f"{self.medians_path} is missing medians for "
                 f"{len(missing_medians)} expected genes. Examples: {examples}"
             )
+        logger.info(
+            "%s aligner loaded expected_genes=%d identifier_aliases=%d "
+            "expected_sample=%s",
+            self.omics_name,
+            len(self.expected_genes),
+            self.alias_count,
+            self.expected_genes[:5],
+        )
 
     def align(self, data_sample: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
         orientation = self._detect_orientation(data_sample)
@@ -72,6 +85,7 @@ class GeneExpressionAligner:
             "gene_axis_name": gene_index.gene_axis_name,
             "fill_strategy": "training_median",
             "min_match_rate": self.min_match_rate,
+            "identifier_aliases": self.alias_count,
         }
 
         self._validate(alignment_report)
@@ -89,6 +103,13 @@ class GeneExpressionAligner:
 
         if row_score > column_score:
             return "genes_as_rows"
+
+        logger.debug(
+            "%s orientation scores: column_matches=%d row_matches=%d",
+            self.omics_name,
+            column_score,
+            row_score,
+        )
         return "genes_as_columns"
 
     def _extract_gene_index(
@@ -250,9 +271,64 @@ class GeneExpressionAligner:
             if self._normalize_name(name) in self.normalized_expected
         )
 
+    @classmethod
+    def _build_identifier_lookup(
+        cls,
+        expected_genes: list[str],
+        gene_aliases: Mapping[str, str],
+    ) -> tuple[dict[str, str], int]:
+        expected_lookup: dict[str, str] = {}
+        for gene in expected_genes:
+            normalized_gene = cls._normalize_name(gene)
+            if normalized_gene:
+                expected_lookup[normalized_gene] = gene
+
+        identifier_lookup = dict(expected_lookup)
+        alias_count = 0
+        for alias, target_gene in gene_aliases.items():
+            normalized_alias = cls._normalize_name(alias)
+            normalized_target = cls._normalize_name(target_gene)
+            if not normalized_alias or not normalized_target:
+                continue
+
+            expected_gene = expected_lookup.get(normalized_target)
+            if expected_gene is None:
+                logger.warning(
+                    "Ignoring gene identifier alias for unknown expected gene: %s -> %s",
+                    alias,
+                    target_gene,
+                )
+                continue
+
+            existing_gene = identifier_lookup.get(normalized_alias)
+            if existing_gene is not None and existing_gene != expected_gene:
+                logger.warning(
+                    "Ignoring conflicting gene identifier alias: %s maps to both %s "
+                    "and %s",
+                    alias,
+                    existing_gene,
+                    expected_gene,
+                )
+                continue
+
+            if normalized_alias not in identifier_lookup:
+                alias_count += 1
+            identifier_lookup[normalized_alias] = expected_gene
+
+        return identifier_lookup, alias_count
+
     @staticmethod
     def _normalize_name(name) -> str:
-        return str(name).strip().upper()
+        if pd.isna(name):
+            return ""
+
+        name = str(name).strip().upper()
+
+        # Remove Ensembl version suffix
+        if name.startswith("ENSG") and "." in name:
+            name = name.split(".")[0]
+
+        return name
 
     @staticmethod
     def _is_empty_or_index_column(column) -> bool:
@@ -299,10 +375,12 @@ class MultiOmicsGeneExpressionAligner:
         expected_genes_path: str | Path,
         medians_paths: Mapping[str, str | Path],
         min_match_rate: float = 0.7,
+        gene_aliases: Mapping[str, str] | None = None,
     ) -> None:
         self.expected_genes_path = Path(expected_genes_path)
         self.min_match_rate = min_match_rate
         self.modalities = tuple(self.MODALITY_MEDIAN_FILENAMES.keys())
+        self.gene_aliases = gene_aliases or {}
 
         missing_modalities = [
             modality
@@ -321,6 +399,7 @@ class MultiOmicsGeneExpressionAligner:
                 medians_path=Path(medians_paths[modality]),
                 min_match_rate=min_match_rate,
                 omics_name=modality,
+                gene_aliases=self.gene_aliases,
             )
             for modality in self.modalities
         }
@@ -330,6 +409,7 @@ class MultiOmicsGeneExpressionAligner:
         cls,
         static_inputs_dir: str | Path,
         min_match_rate: float = 0.7,
+        gene_aliases: Mapping[str, str] | None = None,
     ) -> "MultiOmicsGeneExpressionAligner":
         static_inputs_path = Path(static_inputs_dir)
         return cls(
@@ -339,6 +419,7 @@ class MultiOmicsGeneExpressionAligner:
                 for modality, filename in cls.MODALITY_MEDIAN_FILENAMES.items()
             },
             min_match_rate=min_match_rate,
+            gene_aliases=gene_aliases,
         )
 
     def align(

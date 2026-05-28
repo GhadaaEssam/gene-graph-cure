@@ -166,8 +166,11 @@ def extract_dysregulated_pathways(
     ]
 
     logger.info(
-        f"Dysregulated pathways (threshold={threshold}): "
-        f"{len(dysregulated)} of {len(delta_e_normalized)} — {dysregulated}"
+        "Dysregulated pathways: threshold=%s selected=%s total=%s sample=%s",
+        threshold,
+        len(dysregulated),
+        len(delta_e_normalized),
+        dysregulated[:5],
     )
     return dysregulated
 
