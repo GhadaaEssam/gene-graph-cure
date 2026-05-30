@@ -28,6 +28,8 @@ MODEL_FILES = {
     "ovarian": "ovarian_model.pt",
     "immunotherapy": "immunotherapy_model.pt",
     "breast": "breast_model.pt",
+    "colorectal": "colorectal_model.pt",
+    "breast_multiomics": "final_multiomics_model.pt",
 }
 
 model_registry = ModelServiceRegistry(
@@ -67,6 +69,7 @@ def _alignment_log_summary(report):
             "matched_genes",
             "missing_genes",
             "extra_genes",
+            "sample_count",
             "match_rate",
             "fill_strategy",
             "min_match_rate",
@@ -201,6 +204,35 @@ def _alternative_names(alternatives):
     return names
 
 
+def _resolve_analysis_model_key(cancer_type: str) -> str:
+    cancer_value = cancer_type.lower().strip()
+    normalized_value = (
+        cancer_value
+        .replace("-", "_")
+        .replace(" ", "_")
+    )
+
+    if normalized_value in MODEL_FILES:
+        return normalized_value
+
+    if "breast" in cancer_value and "multi" in cancer_value and "omics" in cancer_value:
+        return "breast_multiomics"
+
+    if "breast" in cancer_value:
+        return "breast"
+    if "ovarian" in cancer_value:
+        return "ovarian"
+    if "liver" in cancer_value:
+        return "liver"
+    if "immunotherapy" in cancer_value:
+        return "immunotherapy"
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"Unsupported cancer type: {cancer_type}",
+    )
+
+
 def _run_adrs_recommendations(
     app,
     patient_id: str,
@@ -250,21 +282,7 @@ async def run_analysis(
 ):
     try:
         # ------------------ normalize cancer type ------------------
-        cancer_value = cancerType.lower().strip()
-
-        if "breast" in cancer_value:
-            model_key = "breast"
-        elif "ovarian" in cancer_value:
-            model_key = "ovarian"
-        elif "liver" in cancer_value:
-            model_key = "liver"
-        elif "immunotherapy" in cancer_value:
-            model_key = "immunotherapy"
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unsupported cancer type: {cancerType}"
-            )
+        model_key = _resolve_analysis_model_key(cancerType)
 
         # ------------------ get service ------------------
         service = model_registry.get_service(model_key)
@@ -294,11 +312,11 @@ async def run_analysis(
         confidence = 0.0
 
         try:
-            if "out_probabilities" in result:
-                confidence = float(max(result["out_probabilities"][0]))
-
-            elif "out_multiomics_probabilities" in result:
+            if "out_multiomics_probabilities" in result:
                 confidence = float(max(result["out_multiomics_probabilities"][0]))
+
+            elif "out_probabilities" in result:
+                confidence = float(max(result["out_probabilities"][0]))
 
         except Exception as e:
             logger.warning("Confidence extraction failed: %s", e)
@@ -385,6 +403,13 @@ async def run_analysis(
         db.refresh(new_prediction)
 
         return {"job_id": job_id}
+
+    except HTTPException:
+        raise
+
+    except ValueError as e:
+        logger.warning("Analysis validation error: %s", e)
+        raise HTTPException(status_code=422, detail=str(e))
 
     except Exception as e:
         logger.error("ANALYSIS ERROR", exc_info=True)

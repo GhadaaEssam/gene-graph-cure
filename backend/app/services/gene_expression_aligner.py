@@ -83,6 +83,7 @@ class GeneExpressionAligner:
             **match_report,
             "orientation": gene_index.orientation,
             "gene_axis_name": gene_index.gene_axis_name,
+            "sample_count": len(aligned_df),
             "fill_strategy": "training_median",
             "min_match_rate": self.min_match_rate,
             "identifier_aliases": self.alias_count,
@@ -196,6 +197,14 @@ class GeneExpressionAligner:
         }
 
     def _validate(self, alignment_report: dict) -> None:
+        if alignment_report["sample_count"] == 0:
+            raise ValueError(
+                f"Uploaded {self.omics_name} file contains no sample expression "
+                "columns after gene alignment. Expected either samples x genes "
+                "with gene names in the header, or genes x samples with one gene "
+                "column plus at least one sample value column."
+            )
+
         if alignment_report["match_rate"] < self.min_match_rate:
             raise ValueError(
                 f"Uploaded {self.omics_name} genes match only "

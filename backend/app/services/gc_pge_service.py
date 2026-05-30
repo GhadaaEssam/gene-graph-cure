@@ -414,6 +414,7 @@ class GC_PGE_Service:
                 "matched_genes",
                 "missing_genes",
                 "extra_genes",
+                "sample_count",
                 "match_rate",
                 "fill_strategy",
                 "min_match_rate",

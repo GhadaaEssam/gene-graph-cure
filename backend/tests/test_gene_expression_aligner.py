@@ -147,6 +147,13 @@ class GeneExpressionAlignerTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "minimum is 75.0%"):
                 aligner.align(uploaded)
 
+    def test_validation_rejects_gene_list_without_sample_values(self):
+        with aligner_for(["A", "B"], {"A": 10, "B": 20}) as aligner:
+            uploaded = pd.DataFrame({"gene": ["A", "B"]})
+
+            with self.assertRaisesRegex(ValueError, "no sample expression columns"):
+                aligner.align(uploaded)
+
     def test_init_rejects_medians_missing_expected_gene(self):
         with tempfile.TemporaryDirectory() as directory:
             directory_path = Path(directory)
