@@ -474,6 +474,15 @@ class GC_PGE_Service:
         result["core_pathways"] = [
             pathway["name"] for pathway in structured_core_pathways
         ]
+        result["anchor_gene_names"] = raw_input.get(
+            "_anchor_gene_names",
+            []
+        )
+
+        result["pathway_names"] = raw_input.get(
+            "_pathway_names",
+            []
+        )
 
     @classmethod
     def _top_indices(cls, values: list[float]) -> list[int]:

@@ -1,24 +1,24 @@
-import numpy as np
+def extract_top_genes(result: dict, k: int = 5):
 
-def get_top_pathways(weights, pathway_names, k=5):
+    genes = result.get("structured_core_genes", [])
 
-    weights = np.array(weights)
+    return [
+        (
+            gene["name"],
+            float(gene["score"])
+        )
+        for gene in genes[:k]
+    ]
 
-    idx = weights.argsort()[-k:][::-1]
 
-    return [(pathway_names[i], float(weights[i])) for i in idx]
+def extract_top_pathways(result: dict, k: int = 5):
 
-def get_top_gene_pairs(graph, gene_names, k=10):
+    pathways = result.get("structured_core_pathways", [])
 
-    import numpy as np
-    graph = np.array(graph)
-
-    edges = []
-
-    for i in range(len(graph)):
-        for j in range(i+1, len(graph)):
-            edges.append((gene_names[i], gene_names[j], graph[i][j]))
-
-    edges.sort(key=lambda x: x[2], reverse=True)
-
-    return edges[:k]
+    return [
+        (
+            pathway["name"],
+            float(pathway["weight"])
+        )
+        for pathway in pathways[:k]
+    ]

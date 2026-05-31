@@ -1,209 +1,122 @@
-from .parser import load_results
-from .prompt_builder import build_prompt
-from .llm_client import generate_text
+import logging
+
 from app.services.rag_service import RAGService
 
-import logging
-import pandas as pd
-import numpy as np
+from .extractor import (
+    extract_top_genes,
+    extract_top_pathways,
+)
+
+from .prompt_builder import build_prompt
+from .llm_client import generate_text
 
 
 logger = logging.getLogger(__name__)
 
-
-# =========================
-# 🔹 Extract Top Genes from Graph
-# =========================
-def get_top_genes_from_graph(graph, gene_names, k=5):
-    graph = np.array(graph)
-
-    # Gene importance = total connections
-    importance = graph.sum(axis=1)
-
-    top_idx = importance.argsort()[-k:][::-1]
-
-    return [(gene_names[i], float(importance[i])) for i in top_idx]
+rag_service = RAGService()
 
 
-# =========================
-# 🔹 Extract Top Pathways (No Names Available)
-# =========================
-
-def load_pathway_names(base_path):
-    df = pd.read_csv(f"{base_path}/pw_id.csv")
-    return df["pwid"].tolist()
-
-def get_top_pathways(weights, pathway_names, k=5):
-    weights = np.array(weights)
-
-    idx = weights.argsort()[-k:][::-1]
-
-    return [
-        (pathway_names[i], float(weights[i]))
-        for i in idx if i < len(pathway_names)
-    ]
-
-
-# =========================
-# 🔹 Convert Graph → vimp_g (for RAG)
-# =========================
-def build_vimp_from_graph(graph):
-    graph = np.array(graph)
-    importance = graph.sum(axis=1)
-    return importance.tolist()
-
-
-# =========================
-# 🔹 Format RAG Evidence for LLM
-# =========================
 def format_evidence(evidence):
-        text = ""
 
-        for e in evidence:
-            title = e.get("title", "Unknown")
-            pmid = e.get("pmid", "N/A")
-            excerpt = e.get("excerpt", "")
+    text = ""
 
-            text += f"""
-    Title: {title}
-    PMID: {pmid}
-    Summary: {excerpt}
-    """
+    for item in evidence:
 
-        return text
+        text += f"""
+Title: {item.get("title")}
 
-# =========================
-# 🔹 MAIN AI FUNCTION
-# =========================
-def run_ai(base_path):
+PMID: {item.get("pmid")}
 
-    result = load_results(base_path)
+Summary:
+{item.get("excerpt")}
+"""
 
-    # genes
-    anchor_df = pd.read_csv(f"{base_path}/test_anchor.csv", header=None)
-    gene_names = [f"Gene_{gid}" for gid in anchor_df.iloc[:, 0].tolist()]
+    return text
 
-    # pathways
-    pathway_names = load_pathway_names(base_path)
 
-    # extract
-    top_genes = get_top_genes_from_graph(result["graph"], gene_names)
+def run_ai_analysis(
+    analysis_result: dict,
+    cancer_type: str | None = None,
+    drug: str | None = None,
+):
 
-    top_pathways = get_top_pathways(
-        result["pathway_weights"],
-        pathway_names
-    )
+    top_genes = extract_top_genes(analysis_result)
 
-    # RAG
-    rag = RAGService()
-    vimp_g = build_vimp_from_graph(result["graph"])
+    top_pathways = extract_top_pathways(analysis_result)
 
-    evidence = rag.generate_evidence(
-        {"vimp_g": vimp_g},
-        anchor_df
-    )
+    evidence = analysis_result.get("rag_evidence")
+
+    if not evidence:
+
+        evidence = rag_service.generate_evidence(
+            prediction_result=analysis_result,
+            anchor_genes_df=None,
+            node_features_df=None,
+            cancer_type=cancer_type,
+            drug=drug,
+        )
 
     rag_context = format_evidence(evidence)
 
-    # LLM
-    prompt = build_prompt(result, top_pathways, top_genes, rag_context)
+    prediction = analysis_result.get("prediction")
+
+    if isinstance(prediction, list):
+        prediction = prediction[0]
+
+    prediction_label = (
+        "Resistant"
+        if prediction == 1
+        else "Sensitive"
+    )
+
+    confidence = 0.0
+
+    probs = analysis_result.get("out_probabilities")
+
+    if probs:
+
+        if isinstance(probs[0], list):
+            confidence = max(probs[0])
+        else:
+            confidence = max(probs)
+
+    prompt = build_prompt(
+        prediction_label=prediction_label,
+        confidence=confidence,
+        top_genes=top_genes,
+        top_pathways=top_pathways,
+        rag_context=rag_context,
+    )
+
     explanation = generate_text(prompt)
 
     return {
-        "prediction": result["prediction"],
-        "confidence": result["probability"],
+        "prediction": prediction_label,
+        "confidence": confidence,
         "top_genes": top_genes,
         "top_pathways": top_pathways,
         "evidence": evidence,
-        "explanation": explanation
+        "explanation": explanation,
     }
-    
-# =========================
-# 🔹 LIVE CHAT FROM ANALYSIS
-# =========================
 
-def ask_ai_from_analysis(question: str, analysis_result: dict):
 
-    # -------------------------
-    # Extract important features
-    # -------------------------
-
-    top_genes = []
-    top_pathways = []
-
-    # genes
-    if "graph" in analysis_result and "gene_names" in analysis_result:
-        top_genes = get_top_genes_from_graph(
-            analysis_result["graph"],
-            analysis_result["gene_names"]
-        )
-
-    # pathways
-    if "pw_w" in analysis_result and "pathway_names" in analysis_result:
-        top_pathways = get_top_pathways(
-            analysis_result["pw_w"],
-            analysis_result["pathway_names"]
-        )
-
-    # -------------------------
-    # Build RAG evidence
-    # -------------------------
-
-    rag_context = ""
-
-    try:
-        if "graph" in analysis_result and "anchor_df" in analysis_result:
-
-            rag = RAGService()
-
-            vimp_g = build_vimp_from_graph(
-                analysis_result["graph"]
-            )
-
-            evidence = rag.generate_evidence(
-                {"vimp_g": vimp_g},
-                analysis_result["anchor_df"]
-            )
-
-            rag_context = format_evidence(evidence)
-
-    except Exception as e:
-        logger.warning("RAG generation failed during analysis chat: %s", e)
-
-    # -------------------------
-    # Build final prompt
-    # -------------------------
+def ask_ai(
+    question: str,
+    analysis_result: dict,
+):
 
     prompt = f"""
 You are an expert biomedical AI assistant.
 
-Patient analysis summary:
+Analysis Result:
 
-Prediction:
-{analysis_result.get("prediction")}
-
-Confidence:
-{analysis_result.get("confidence")}
-
-Top Pathways:
-{top_pathways}
-
-Top Genes:
-{top_genes}
-
-Scientific Evidence:
-{rag_context}
+{analysis_result}
 
 User Question:
+
 {question}
 
-Provide a medically accurate explanation in clear language.
+Answer using the analysis result and scientific evidence.
 """
 
-    # -------------------------
-    # Generate response
-    # -------------------------
-
-    response = generate_text(prompt)
-
-    return response
+    return generate_text(prompt)

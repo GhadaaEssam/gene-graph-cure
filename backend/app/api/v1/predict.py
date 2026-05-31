@@ -88,22 +88,18 @@ async def predict(
             request.uploaded_files,
             include_graph=request.include_graph,
         )
+        
+        evidence = rag_service.generate_evidence(
+            result,
+            geo_df
+        )
 
         # ---------------- RAG INTEGRATION ----------------
         if rag_service is not None:
             try:
-                await geo_features.seek(0)
-
-                geo_content = await geo_features.read()
-
-                geo_df = pd.read_csv(
-                    io.BytesIO(geo_content),
-                    header=0
-                )
-
                 evidence = rag_service.generate_evidence(
-                    result,
-                    geo_df
+                    prediction_result=result,
+                    cancer_type=request.model.value,
                 )
 
                 result["rag_evidence"] = evidence

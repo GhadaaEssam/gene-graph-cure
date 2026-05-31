@@ -1,95 +1,54 @@
-def build_prompt(result, top_pathways, top_genes, rag_context):
-    """
-    Builds a structured, clinical-grade prompt for the LLM.
-    Forces the model to use GC-PGE outputs + RAG evidence.
-    """
+def build_prompt(
+    prediction_label,
+    confidence,
+    top_genes,
+    top_pathways,
+    rag_context,
+):
 
-    # =========================
-    # 🔹 Format prediction
-    # =========================
-    prediction_label = "Resistant" if result["prediction"] == 1 else "Sensitive"
-    confidence = round(float(result["probability"]), 4)
+    genes_text = "\n".join(
+        f"- {name} (score={score:.4f})"
+        for name, score in top_genes
+    )
 
-    # =========================
-    # 🔹 Format genes
-    # =========================
-    genes_text = "\n".join([f"- {g[0]} (importance: {round(g[1], 3)})" for g in top_genes])
+    pathways_text = "\n".join(
+        f"- {name} (weight={weight:.4f})"
+        for name, weight in top_pathways
+    )
 
-    # =========================
-    # 🔹 Format pathways
-    # =========================
-    pathways_text = "\n".join([f"- {p[0]} (weight: {round(p[1], 3)})" for p in top_pathways])
-
-    # =========================
-    # 🔹 Final Prompt
-    # =========================
     prompt = f"""
-You are an AI medical assistant specialized in oncology and drug resistance.
+You are an expert biomedical AI assistant.
 
-Your task is to generate a clear, clinically meaningful explanation of a tumor drug resistance prediction using model outputs and scientific evidence.
+MODEL PREDICTION
+----------------
+Prediction: {prediction_label}
 
------------------------------
-🔬 MODEL PREDICTION
------------------------------
-- Drug Response: {prediction_label}
-- Confidence Score: {confidence}
+Confidence: {confidence:.4f}
 
------------------------------
-🧬 KEY GENES (from model)
------------------------------
+TOP GENES
+---------
 {genes_text}
 
------------------------------
-🧪 IMPORTANT PATHWAYS
------------------------------
+TOP PATHWAYS
+------------
 {pathways_text}
 
------------------------------
-📚 SCIENTIFIC EVIDENCE
------------------------------
+SCIENTIFIC EVIDENCE
+-------------------
 {rag_context}
 
------------------------------
-🧠 INSTRUCTIONS
------------------------------
-Generate a structured explanation with the following sections:
+TASK
+----
+Explain:
 
-1. Prediction Summary  
-   - Clearly state whether the tumor is resistant or sensitive  
-   - Mention the confidence level  
+1. What the prediction means
+2. Why these genes are important
+3. Why these pathways are important
+4. Possible biological mechanisms
+5. Supporting literature evidence
 
-2. Key Molecular Drivers  
-   - Explain the role of the listed genes  
-   - Focus on how they contribute to drug resistance  
-
-3. Pathway-Level Interpretation  
-   - Explain how the pathways influence tumor behavior  
-   - Link pathways to resistance mechanisms  
-
-4. Biological Mechanism  
-   - Provide a coherent explanation of WHY resistance occurs  
-   - Integrate genes + pathways together  
-
-5. Supporting Evidence  
-   - Use the provided scientific evidence (PMIDs if available)  
-   - Do NOT invent studies  
-
------------------------------
-⚠️ RULES
------------------------------
-- Use ONLY the provided genes, pathways, and evidence  
-- Do NOT hallucinate gene names or mechanisms  
-- Keep explanation concise but informative  
-- Use professional medical language  
-- Avoid unnecessary repetition  
-- If you are unsure about the biological function of a pathway,
-do NOT assume its role. Only describe it in general terms.
-
------------------------------
-🎯 OUTPUT FORMAT
------------------------------
-Write in well-structured paragraphs with clear section headers.
-
+Use only the supplied evidence.
+Do not invent genes, pathways, or studies.
 """
 
     return prompt
