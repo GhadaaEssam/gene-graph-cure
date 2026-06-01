@@ -1,3 +1,4 @@
+//dashboard.tsx
 import React, { useEffect, useState, useCallback } from 'react';
 import { 
   StyleSheet, Text, View, ScrollView, SafeAreaView, 
@@ -25,6 +26,7 @@ interface AnalysisItem {
   prediction: string;
   confidence: number;
   date: string;
+  cancer_type: string;
 }
 
 export default function Dashboard() {
@@ -116,7 +118,7 @@ export default function Dashboard() {
           {/* سجل التحليلات - Analysis History */}
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Analysis History</Text>
-            <TouchableOpacity onPress={() => router.push('/history')}>
+            <TouchableOpacity onPress={() => router.push('/(tabs)/explore')}>
               <Text style={styles.viewAllText}>View All</Text>
             </TouchableOpacity>
           </View>
@@ -130,7 +132,7 @@ export default function Dashboard() {
               <View style={styles.historyHeader}>
                 <View>
                   <Text style={styles.patientId}>ID: {item.id}</Text>
-                  <Text style={styles.cancerType}>Liver Cancer</Text>
+                  <Text style={styles.cancerType}>{item.cancer_type || 'N/A'}</Text>
                 </View>
                 <View style={[
                   styles.statusBadge, 

@@ -26,7 +26,7 @@ if load_dotenv is not None:
 # ---------------------------------------------------
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:post10900@localhost:5432/gc_pge_db"
+    "postgresql://postgres:1422004@localhost:5432/gc_pge_db"
 )
 
 # ---------------------------------------------------
