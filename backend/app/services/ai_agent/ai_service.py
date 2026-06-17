@@ -72,13 +72,11 @@ def run_ai_analysis(
     confidence = 0.0
 
     probs = analysis_result.get("out_probabilities")
-
     if probs:
-
         if isinstance(probs[0], list):
-            confidence = max(probs[0])
+            confidence = max(probs[0])     # nested: [[0.1, 0.9]] → 0.9
         else:
-            confidence = max(probs)
+            confidence = max(probs)        # flat:   [0.1, 0.9]   → 0.9
 
     prompt = build_prompt(
         prediction_label=prediction_label,

@@ -11,10 +11,25 @@ import {
 import { Link, useParams, useNavigate } from "react-router-dom";
 import {
   FaArrowLeft,
+  FaCircleCheck,
   FaTriangleExclamation,
   FaNetworkWired,
 } from "react-icons/fa6";
 import { getAnalysisResult } from "../api/analysisApi";
+
+const normalizePrediction = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+
+  if (["1", "1.0", "true", "resistant", "resistance"].includes(normalized)) {
+    return "Resistant";
+  }
+
+  if (["0", "0.0", "false", "sensitive", "sensitivity"].includes(normalized)) {
+    return "Sensitive";
+  }
+
+  return "Unknown";
+};
 
 function Results() {
   const { job_id } = useParams();
@@ -105,6 +120,17 @@ function Results() {
     ))
     .filter((item) => item?.drug_name || item?.name);
 
+  const prediction = normalizePrediction(data.prediction);
+  const isResistant = prediction === "Resistant";
+  const isSensitive = prediction === "Sensitive";
+  const resultTone = isResistant ? "resistant" : isSensitive ? "sensitive" : "unknown";
+  const resultBadge = isResistant ? "High Risk" : isSensitive ? "Lower Risk" : "Result Pending";
+  const resultTitle = isResistant
+    ? "Drug Resistance Predicted"
+    : isSensitive
+      ? "Drug Sensitivity Predicted"
+      : "Prediction Unavailable";
+
   // ---------------- UI ----------------
   return (
     <div className="results-page py-4">
@@ -122,14 +148,26 @@ function Results() {
           font-size: 0.85rem;
         }
 
-        .alert-card {
-          background-color: #fff5f5;
-          border: 1px solid #fecaca;
+        .result-status-card {
           border-radius: 12px;
         }
 
-        .alert-icon-wrapper {
-          background-color: #ef4444;
+        .result-status-card.resistant {
+          background-color: #fff5f5;
+          border: 1px solid #fecaca;
+        }
+
+        .result-status-card.sensitive {
+          background-color: #f0fdf4;
+          border: 1px solid #bbf7d0;
+        }
+
+        .result-status-card.unknown {
+          background-color: #f8fafc;
+          border: 1px solid #cbd5e1;
+        }
+
+        .result-icon-wrapper {
           color: white;
           width: 50px;
           height: 50px;
@@ -137,6 +175,18 @@ function Results() {
           display: flex;
           justify-content: center;
           align-items: center;
+        }
+
+        .result-icon-wrapper.resistant {
+          background-color: #ef4444;
+        }
+
+        .result-icon-wrapper.sensitive {
+          background-color: #16a34a;
+        }
+
+        .result-icon-wrapper.unknown {
+          background-color: #64748b;
         }
 
         .custom-card {
@@ -199,18 +249,20 @@ function Results() {
         </div>
 
         {/* MAIN CARD */}
-        <Card className="alert-card mb-4 p-4">
+        <Card className={`result-status-card ${resultTone} mb-4 p-4`}>
           <div className="d-flex justify-content-between align-items-center flex-wrap gap-3">
             
             <div className="d-flex align-items-center gap-3">
-              <div className="alert-icon-wrapper">
-                <FaTriangleExclamation />
+              <div className={`result-icon-wrapper ${resultTone}`}>
+                {isResistant ? <FaTriangleExclamation /> : <FaCircleCheck />}
               </div>
 
               <div>
-                <Badge bg="danger">High Risk</Badge>
+                <Badge bg={isResistant ? "danger" : isSensitive ? "success" : "secondary"}>
+                  {resultBadge}
+                </Badge>
                 <h4 className="fw-bold m-0">
-                  Drug Resistance Predicted
+                  {resultTitle}
                 </h4>
                 <span className="text-muted">
                   {data.cancerType}

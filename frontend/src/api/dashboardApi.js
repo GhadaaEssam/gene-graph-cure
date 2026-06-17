@@ -1,64 +1,61 @@
-// src/api/dashboardApi.js
-
 const BASE_URL = "http://127.0.0.1:8000/dashboard";
 
-/**
- * دالة مساعدة لجلب التوكن من التخزين المحلي
- */
 const getAuthHeaders = () => {
-  const token = localStorage.getItem("userToken"); // تأكدي إن الاسم هنا هو نفس اللي بتسيفيه وقت اللوج إن
+  const token = localStorage.getItem("userToken");
+
   return {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${token}`, // ده السطر اللي ناقص!
+    Authorization: `Bearer ${token}`,
   };
 };
 
-/**
- * 1️⃣ Dashboard Summary Stats
- */
+const emptySummary = {
+  doctorName: "Doctor",
+  totalAnalyses: 0,
+  resistant: 0,
+  sensitive: 0,
+  topPathway: "N/A",
+  topPathwayCount: 0,
+  resistanceDistribution: [
+    { label: "Resistant", count: 0 },
+    { label: "Sensitive", count: 0 },
+  ],
+  topAffectedPathways: [],
+  analysesOverTime: [],
+};
+
 export const getDashboardSummary = async () => {
   try {
     const response = await fetch(`${BASE_URL}/summary`, {
       method: "GET",
-      headers: getAuthHeaders(), // بنبعت الهيدرز اللي فيها التوكن
+      headers: getAuthHeaders(),
     });
-    
+
     if (!response.ok) {
-        // لو التوكن منتهي أو مش موجود، هيرجع 401
-        throw new Error(`Error: ${response.status}`);
+      throw new Error(`Error: ${response.status}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error("Dashboard Summary Error:", error);
-    return {
-      doctorName: "Doctor",
-      totalAnalyses: 0,
-      resistant: 0,
-      sensitive: 0,
-      topPathway: "N/A",
-      topPathwayCount: 0,
-    };
+    return emptySummary;
   }
 };
 
-/**
- * 2️⃣ Recent Analyses Table
- */
 export const getRecentAnalyses = async () => {
   try {
     const response = await fetch(`${BASE_URL}/recent`, {
       method: "GET",
       headers: getAuthHeaders(),
     });
-    
+
     if (!response.ok) {
-        throw new Error(`Error: ${response.status}`);
+      throw new Error(`Error: ${response.status}`);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error("Recent Analyses Error:", error);
-    return []; 
+    return [];
   }
 };

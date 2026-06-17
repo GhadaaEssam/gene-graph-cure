@@ -130,6 +130,23 @@ def _normalize_resistant_drug(value: Optional[str]) -> str:
     return "Unknown"
 
 
+def _prediction_label(value) -> str:
+    if isinstance(value, list):
+        value = value[0] if value else 0
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "1.0", "true", "resistant", "resistance"}:
+            return "Resistant"
+        if normalized in {"0", "0.0", "false", "sensitive", "sensitivity"}:
+            return "Sensitive"
+
+    try:
+        return "Resistant" if int(float(value)) == 1 else "Sensitive"
+    except (TypeError, ValueError):
+        return str(value or "Unknown")
+
+
 def _build_adrs_request(
     patient_id: str,
     resistant_drug: str,
@@ -353,7 +370,7 @@ async def run_analysis(
             analysis_code=job_id,
             cancer_type=cancerType,
             drug_name=resistant_drug,
-            prediction_result=str(prediction_value),
+            prediction_result=_prediction_label(prediction_value),
             confidence_score=confidence
         )
 
@@ -456,6 +473,7 @@ async def get_result(
         "job_id": record.analysis_code,
         "cancerType": record.cancer_type,
         "resistantDrug": resistant_drug,
+        "prediction": _prediction_label(record.prediction_result),
         "riskScore": int(record.confidence_score * 100) if record.confidence_score else 0,
         "pathways": details.pathways if details else [],
         "genes": details.genes if details else [],
