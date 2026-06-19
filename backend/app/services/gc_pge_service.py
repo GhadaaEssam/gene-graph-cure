@@ -303,16 +303,20 @@ class GC_PGE_Service:
         return json_result
 
     def _filter_heavy_outputs(self, result: dict, include_graph: bool) -> dict:
-        if include_graph or "graph" not in result:
+        if "graph" not in result:
+            result.setdefault("graph_shape", None)
             return result
 
-        graph = result.pop("graph")
+        graph = result["graph"]
         if isinstance(graph, list):
             rows = len(graph)
             cols = len(graph[0]) if rows and isinstance(graph[0], list) else 0
             result["graph_shape"] = [rows, cols]
         else:
             result["graph_shape"] = None
+
+        if not include_graph:
+            result.pop("graph")
 
         return result
 

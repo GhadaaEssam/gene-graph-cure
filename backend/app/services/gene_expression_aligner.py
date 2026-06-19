@@ -161,24 +161,34 @@ class GeneExpressionAligner:
 
         expected_count = len(self.expected_genes)
         matched_count = len(matched_genes)
+        missing_count = len(missing_genes)
+        extra_count = len(extra_genes)
+        aligned_gene_count = matched_count + missing_count + extra_count
+        contract_match_rate = matched_count / expected_count if expected_count else 0.0
         return {
             "expected_genes": expected_count,
             "uploaded_genes": len([name for name in normalized_names if name]),
             "matched_genes": matched_count,
-            "missing_genes": len(missing_genes),
-            "extra_genes": len(extra_genes),
+            "missing_genes": missing_count,
+            "extra_genes": extra_count,
             "matched_gene_names": matched_genes,
             "missing_gene_names": missing_genes,
             "extra_gene_names": extra_genes,
             "duplicate_genes": duplicate_upload_genes,
-            "match_rate": matched_count / expected_count if expected_count else 0.0,
+            "contract_match_rate": contract_match_rate,
+            "match_rate": (
+                matched_count / aligned_gene_count
+                if aligned_gene_count
+                else 0.0
+            ),
         }
 
     def _validate(self, alignment_report: dict) -> None:
-        if alignment_report["match_rate"] < self.min_match_rate:
+        contract_match_rate = alignment_report["contract_match_rate"]
+        if contract_match_rate < self.min_match_rate:
             raise ValueError(
                 f"Uploaded {self.omics_name} genes match only "
-                f"{alignment_report['match_rate']:.1%} of the expected model "
+                f"{contract_match_rate:.1%} of the expected model "
                 f"contract; minimum is {self.min_match_rate:.1%}."
             )
 

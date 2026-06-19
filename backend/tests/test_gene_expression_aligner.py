@@ -36,6 +36,8 @@ class GeneExpressionAlignerTest(unittest.TestCase):
             self.assertEqual(report["matched_genes"], 2)
             self.assertEqual(report["missing_gene_names"], ["C"])
             self.assertEqual(report["extra_gene_names"], ["EXTRA"])
+            self.assertEqual(report["contract_match_rate"], 2 / 3)
+            self.assertEqual(report["match_rate"], 2 / 4)
 
     def test_aligns_genes_as_rows_and_normalizes_gene_names(self):
         with aligner_for(["A", "B", "C"], {"A": 10, "B": 20, "C": 30}) as aligner:

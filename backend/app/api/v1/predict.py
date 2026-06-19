@@ -31,7 +31,11 @@ model_registry = ModelServiceRegistry(
 )
 
 
-@router.post("/predict", response_model=PredictionResult)
+@router.post(
+    "/predict",
+    response_model=PredictionResult,
+    response_model_exclude_none=True,
+)
 async def predict(
     geo_features: UploadFile = File(...),
     model: ModelKey = Form(...),
