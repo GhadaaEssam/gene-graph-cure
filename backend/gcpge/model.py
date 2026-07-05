@@ -191,8 +191,7 @@ class ConcreteDropout(nn.Module):
 class VariableDropoutMLP(nn.Module):
     def __init__(self,data_x_shape,temp= 1.0/10.0):
         super().__init__()
-        # Multi-layer perceptron with decreasing layer sizes and heavy dropout
-        self.model = nn.Sequential(
+        self.feature_extractor = nn.Sequential(
             nn.Linear(data_x_shape,1000),  # Input layer to first hidden layer
             nn.BatchNorm1d(1000),           # Normalize activations for training stability
             nn.Dropout(0.9),                # Heavy dropout (90%) for regularization
@@ -207,9 +206,8 @@ class VariableDropoutMLP(nn.Module):
             nn.BatchNorm1d(300),
             nn.Dropout(0.8),                # Slightly reduced dropout (80%)
             nn.LeakyReLU(),
-            
-            nn.Linear(300,2),               # Output layer: 2 classes (resistant/susceptible)
         )
+        self.classifier = nn.Linear(300,2)
         self.temp = temp
         
     def forward(self,x,vimp):
@@ -230,13 +228,88 @@ class VariableDropoutMLP(nn.Module):
         # Apply sigmoid with temperature
         approx_output = torch.sigmoid(approx / self.temp)
         
-        # Weight input features by learned importance, then pass through MLP
-        out = self.model(x*( approx_output))
+        weighted_x = x*( approx_output)
+
+        # Older GC-PGE weights were pickled with ``self.model`` instead of the
+        # split feature_extractor/classifier pair. Keep that path alive so the
+        # base model continues to run after adding multi-omics support.
+        if hasattr(self, "feature_extractor") and hasattr(self, "classifier"):
+            h = self.feature_extractor(weighted_x)
+            out = self.classifier(h)
+        else:
+            out = self.model(weighted_x)
+            h = None
+
         # Apply log softmax for stable classification
         out = F.log_softmax(out, dim=1)
         # loss = F.nll_loss(out, y.long())
         # output = out.max(dim=1).indices
-        return out
+        return out, h
+
+
+class MethylationEncoder(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 500),
+            nn.BatchNorm1d(500),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+            nn.Linear(500, 300)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class CNVEncoder(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.input_norm = nn.BatchNorm1d(input_dim)
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 500),
+            nn.BatchNorm1d(500),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+            nn.Linear(500, 300)
+        )
+
+    def forward(self, x):
+        return self.net(self.input_norm(x))
+
+
+class SNVEncoder(nn.Module):
+    def __init__(self, input_dim):
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, 1000),
+            nn.BatchNorm1d(1000),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.5),
+            nn.Linear(1000, 300)
+        )
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class OmicsFusion(nn.Module):
+    def __init__(self, latent_dim=300, num_omics=4):
+        super().__init__()
+        self.gates = nn.ModuleList([
+            nn.Linear(latent_dim, latent_dim)
+            for _ in range(num_omics)
+        ])
+        self.out_proj = nn.Linear(latent_dim, latent_dim)
+        self.norm = nn.BatchNorm1d(latent_dim)
+
+    def forward(self, z_rna, z_meth, z_cnv, z_snv):
+        z_list = [z_rna, z_meth, z_cnv, z_snv]
+        raw_scores = [gate(z) for gate, z in zip(self.gates, z_list)]
+        attn_weights = F.softmax(torch.stack(raw_scores, dim=0), dim=0)
+        fused = torch.sum(attn_weights * torch.stack(z_list, dim=0), dim=0)
+        self.current_attention_weights = attn_weights.detach()
+        return self.norm(self.out_proj(fused))
 
 
 # Graph Convolutional Neural Network
@@ -293,25 +366,47 @@ class Model(nn.Module):
         for i in range(num_muti_mlp):
             self.vdMLP_list.append(VariableDropoutMLP(data_x_shape=data_geo_x_shape[1]))
         self.vdMLP_list = nn.ModuleList(self.vdMLP_list)
+
+        # Optional late-fusion branch. Base-model inference does not pass these
+        # inputs, so the original RNA-only behavior remains unchanged.
+        self.enc_meth = MethylationEncoder(data_geo_x_shape[1])
+        self.enc_cnv = CNVEncoder(data_geo_x_shape[1])
+        self.enc_snv = SNVEncoder(data_geo_x_shape[1])
+        self.fusion = OmicsFusion(latent_dim=300, num_omics=4)
+        self.final_classifier = nn.Sequential(
+            nn.Linear(300, 64),
+            nn.BatchNorm1d(64),
+            nn.LeakyReLU(0.2),
+            nn.Dropout(0.3),
+            nn.Linear(64, 2),
+            nn.LogSoftmax(dim=1)
+        )
         
-    def forward(self,data,data_geo_x):
+    def forward(self,data,data_geo_x,x_meth=None, x_cnv=None, x_snv=None):
         # Multi-GAT produces: nodal importance scores, loss, graph-based predictions, adjacency matrix, feature weights
         vimp,loss_mutiGAT,out_graph,graph,pw_w = self.mutiGAT(data)
         
         # Initialize output tensor for accumulating MLP predictions
         out = torch.zeros([data_geo_x.shape[0],2]).to(next(self.parameters()).device)
+        z_rna_list = []
         
         # Pass genomic features through each MLP with graph-derived importance weights
         for module in self.vdMLP_list:
             # Each MLP makes independent predictions weighted by graph importance
-            temp = module(data_geo_x,out_graph)
+            module_result = module(data_geo_x,out_graph)
+            if isinstance(module_result, tuple):
+                temp, h = module_result
+            else:
+                temp, h = module_result, None
             out = out + temp.exp()  # Accumulate exponential of log-probabilities
+            if h is not None:
+                z_rna_list.append(h)
         
         # L1 regularization: penalizes large graph-based predictions (prevents overconfident predictions)
         loss_L1 = torch.mean(torch.pow(out_graph,2))
         
         # Return comprehensive outputs for training and analysis
-        return {
+        result = {
             'out':torch.log(out/self.num_muti_mlp),      # Averaged ensemble predictions (log-space)
             'vimp_g':out_graph,                           # Graph-derived importance scores
             'loss_mutiGAT':loss_mutiGAT,                 # Multi-GAT loss for backpropagation
@@ -321,3 +416,25 @@ class Model(nn.Module):
             'pw_w':pw_w,                                 # Feature importance weights
             'cor':vimp                                    # Node correlations from GAT
         }
+
+        if x_meth is not None and x_cnv is not None and x_snv is not None:
+            if not (
+                hasattr(self, "enc_meth")
+                and hasattr(self, "enc_cnv")
+                and hasattr(self, "enc_snv")
+                and hasattr(self, "fusion")
+                and hasattr(self, "final_classifier")
+                and z_rna_list
+            ):
+                raise RuntimeError("Loaded weights do not include the multi-omics late-fusion branch")
+
+            z_rna = torch.stack(z_rna_list, dim=0).mean(dim=0)
+            z_meth = self.enc_meth(x_meth)
+            z_cnv = self.enc_cnv(x_cnv)
+            z_snv = self.enc_snv(x_snv)
+            z_fused = self.fusion(z_rna, z_meth, z_cnv, z_snv)
+
+            result['out_multiomics'] = self.final_classifier(z_fused)
+            result['z_rna'] = z_rna
+
+        return result

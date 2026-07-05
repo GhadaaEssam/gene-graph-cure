@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, ForeignKey, DateTime, JSON
+from sqlalchemy import Column, Integer, ForeignKey, DateTime, JSON , Text
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .base import Base
@@ -11,6 +11,8 @@ class PredictionDetails(Base):
     last_synced = Column(DateTime, default=datetime.utcnow)
     core_genes = Column(JSON) 
     pathways = Column(JSON) 
+    genes = Column(JSON)
     alternative_drugs = Column(JSON) 
+    interpretation = Column(Text)
 
     prediction = relationship("PredictionHistory", back_populates="details")
