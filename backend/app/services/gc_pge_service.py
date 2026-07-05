@@ -2,8 +2,6 @@ from fastapi import UploadFile # Assuming loguru based on your logger usage, adj
 import torch
 import pandas as pd
 import io
-import numpy as np
-from pathlib import Path
 import sys
 from typing import Dict, List, Optional, Union
 from scipy.special import erfinv
@@ -11,17 +9,31 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# --- Module path setup ---
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT / "gcpge"))
 
 import model
-sys.modules["model.model"] = model  
 
+sys.modules["model.model"] = model
+
+from app.services.gene_expression_aligner import (
+    GeneExpressionAligner,
+    MultiOmicsGeneExpressionAligner,
+)
 from gcpge.preprocess import preprocess_for_inference
 
+
 class GC_PGE_Service:
+    CORE_RESULT_LIMIT = 10
     MULTIOMICS_FILE_KEYS = ("meth_features", "cnv_features", "snv_features")
+    STATIC_INPUT_FILENAMES = {
+        "anchor_genes": ("anchor_genes.csv",),
+        "node_features": ("node_features.csv",),
+        "ppi_edges": ("ppi_edges.csv",),
+        "homolog_edges": ("homolog_edges.csv", "homolg_edges.csv"),
+        "expected_geo_genes": ("expected_geo_genes.csv",),
+        "geo_gene_medians": ("geo_gene_medians.csv", "rna_gene_medians.csv"),
+    }
     EPSILON = np.finfo(float).eps
 
     # --- MODIFIED: Expects a dictionary of base models and one multiomics model ---
@@ -43,21 +55,24 @@ class GC_PGE_Service:
             self.multiomics_model = self._load_model(multiomics_model_path)
             logger.info(f"Loaded Master Multi-omics Model from: {multiomics_model_path}")
 
-    def _load_model(self, model_path: str):
-        loaded_model = torch.load(
-            model_path,
-            map_location=self.device,
-            weights_only=False
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.pathway_id_labels = self._load_pathway_id_labels(
+            PROJECT_ROOT / "gcpge" / "pw_id.csv"
         )
-        loaded_model.to(self.device)
-        loaded_model.eval()
-        return loaded_model
+        self.gene_aligner = GeneExpressionAligner(
+            expected_genes_path=self._static_input_path("expected_geo_genes"),
+            medians_path=self._static_input_path("geo_gene_medians"),
+        )
+        self.multiomics_aligner = self._build_multiomics_aligner()
 
-    def _supports_multiomics(self, loaded_model) -> bool:
-        return all(
-            hasattr(loaded_model, attr)
-            for attr in ("enc_meth", "enc_cnv", "enc_snv", "fusion", "final_classifier")
-        )
+        self.model = self._load_model(str(model_path_obj))
+        self.multiomics_models = [
+            self._load_model(path)
+            for path in (multiomics_model_paths or [])
+            if path
+        ]
+        if not self.multiomics_models and self._supports_multiomics(self.model):
+            self.multiomics_models = [self.model]
 
     async def predict_from_files(self, raw_files: Dict[str, Union[UploadFile, str]], include_graph: bool = True):
         # 1. Safely extract the cancer type (works whether it arrives as string or bytes)
@@ -94,8 +109,8 @@ class GC_PGE_Service:
         if has_multiomics and not has_all_multiomics:
             missing = [key for key in self.MULTIOMICS_FILE_KEYS if key not in contents]
             raise ValueError(
-                "Multi-omics prediction requires all three optional files: "
-                + ", ".join(missing)
+                "Multi-omics prediction requires all optional files: "
+                f"{', '.join(missing)}"
             )
             
         use_multiomics = False
@@ -228,10 +243,10 @@ class GC_PGE_Service:
             data = data.to(self.device)
 
             omics = raw_input["omics"]
-            x_rna = torch.tensor(omics["data_geo_x"].values, dtype=torch.float).to(self.device)
-            x_meth = torch.tensor(omics["data_meth_x"].values, dtype=torch.float).to(self.device)
-            x_cnv = torch.tensor(omics["data_cnv_x"].values, dtype=torch.float).to(self.device)
-            x_snv = torch.tensor(omics["data_snv_x"].values, dtype=torch.float).to(self.device)
+            x_rna = self._frame_to_tensor(omics["data_geo_x"])
+            x_meth = self._frame_to_tensor(omics["data_meth_x"])
+            x_cnv = self._frame_to_tensor(omics["data_cnv_x"])
+            x_snv = self._frame_to_tensor(omics["data_snv_x"])
 
             result = self.multiomics_model(
                 data,
@@ -254,14 +269,99 @@ class GC_PGE_Service:
                 self._to_json_serializable(result),
                 include_graph=include_graph
             )
+        else:
+            processed_data["_anchor_indices"] = set()
 
-    def _to_json_serializable(self, result: dict):
-        json_serializable_result = {}
+        return processed_data
+
+    def _build_multiomics_input(self, contents: Mapping[str, bytes]) -> dict:
+        assert self.multiomics_aligner is not None
+        aligned, alignment_report = self.multiomics_aligner.align(
+            {
+                "rna": pd.read_csv(io.BytesIO(contents["geo_features"]), header=0),
+                "meth": pd.read_csv(io.BytesIO(contents["meth_features"]), header=0),
+                "cnv": pd.read_csv(io.BytesIO(contents["cnv_features"]), header=0),
+                "snv": pd.read_csv(io.BytesIO(contents["snv_features"]), header=0),
+            }
+        )
+
+        return {
+            "data_geo_x": aligned["rna"],
+            "data_meth_x": aligned["meth"],
+            "data_cnv_x": aligned["cnv"],
+            "data_snv_x": aligned["snv"],
+            "sample_ids": [str(index) for index in aligned["rna"].index.tolist()],
+            "gene_ids": aligned["rna"].columns.astype(str).tolist(),
+            "alignment_report": alignment_report,
+        }
+
+    def _load_model(self, model_path: str):
+        loaded_model = torch.load(
+            model_path,
+            map_location=self.device,
+            weights_only=False,
+        )
+        loaded_model.to(self.device)
+        loaded_model.eval()
+        return loaded_model
+
+    @staticmethod
+    def _supports_multiomics(loaded_model) -> bool:
+        return all(
+            hasattr(loaded_model, attr)
+            for attr in ("enc_meth", "enc_cnv", "enc_snv", "fusion", "final_classifier")
+        )
+
+    def _frame_to_tensor(self, frame: pd.DataFrame) -> torch.Tensor:
+        return torch.tensor(frame.values, dtype=torch.float).to(self.device)
+
+    @classmethod
+    def _validate_static_inputs(cls, static_inputs_dir: Path) -> None:
+        missing_files = []
+        for input_name, filenames in cls.STATIC_INPUT_FILENAMES.items():
+            if not any((static_inputs_dir / filename).is_file() for filename in filenames):
+                missing_files.append(f"{input_name} ({' or '.join(filenames)})")
+
+        if missing_files:
+            raise FileNotFoundError(
+                f"Missing static model input files in {static_inputs_dir}: "
+                f"{', '.join(missing_files)}"
+            )
+
+    def _static_input_path(self, input_name: str) -> Path:
+        for filename in self.STATIC_INPUT_FILENAMES[input_name]:
+            path = self.static_inputs_dir / filename
+            if path.is_file():
+                return path
+        raise FileNotFoundError(
+            f"Missing static model input '{input_name}' in {self.static_inputs_dir}"
+        )
+
+    def _build_multiomics_aligner(self) -> MultiOmicsGeneExpressionAligner | None:
+        expected_path = self.static_inputs_dir / "expected_geo_genes.csv"
+        medians_paths = {
+            modality: self.static_inputs_dir / filename
+            for modality, filename in (
+                MultiOmicsGeneExpressionAligner.MODALITY_MEDIAN_FILENAMES.items()
+            )
+        }
+        if not expected_path.exists() or not all(path.exists() for path in medians_paths.values()):
+            return None
+
+        return MultiOmicsGeneExpressionAligner(
+            expected_genes_path=expected_path,
+            medians_paths=medians_paths,
+        )
+
+    def _to_json_serializable(self, result: dict, collapse_out: bool = False) -> dict:
+        json_result = {}
         for key, value in result.items():
             if isinstance(value, torch.Tensor):
-                json_serializable_result[key] = value.detach().cpu().tolist()
+                if collapse_out and key == "out":
+                    value = value.max(dim=1).indices
+                json_result[key] = value.detach().cpu().tolist()
             elif isinstance(value, (np.ndarray, np.generic)):
-                json_serializable_result[key] = value.tolist()
+                json_result[key] = value.tolist()
             else:
                 json_serializable_result[key] = value
         return json_serializable_result
@@ -270,13 +370,16 @@ class GC_PGE_Service:
         if include_graph or "graph" not in result:
             return result
 
-        graph = result.pop("graph")
+        graph = result["graph"]
         if isinstance(graph, list):
             rows = len(graph)
             cols = len(graph[0]) if rows and isinstance(graph[0], list) else 0
             result["graph_shape"] = [rows, cols]
         else:
             result["graph_shape"] = None
+
+        if not include_graph:
+            result.pop("graph")
 
         return result
     

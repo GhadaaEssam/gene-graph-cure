@@ -1,11 +1,27 @@
-from pydantic import BaseModel, ConfigDict, Field
-from typing import List, Any, Union, Optional
 from enum import Enum
+from typing import Any, List, Optional, Union
 
-class CancerType(str, Enum):
-    lung = "lung"
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+class ModelKey(str, Enum):
+    liver = "liver"
+    ovarian = "ovarian"
+    immunotherapy = "immunotherapy"
+    colorectal = "colorectal"
     breast = "breast"
-    colon = "colon"
+    breast_multiomics = "breast_multiomics"
+
+class CoreGene(BaseModel):
+    index: int
+    name: str
+    score: float
+    correlation: Optional[float] = None
+    is_anchor: bool = False
+
+class CorePathway(BaseModel):
+    index: int
+    name: str
+    weight: float
 
 class PredictionRequest(BaseModel):
     # node_features:  List[List[float]]
@@ -23,7 +39,7 @@ class PredictionResult(BaseModel):
     loss_L1: Union[float, List[float]]
     
     # Keeping the others as they were
-    out: List[List[float]]
+    out: List[int]
     cor: List[float]
     graph: Optional[List[List[float]]] = None
     graph_shape: Optional[List[int]] = None
@@ -33,7 +49,7 @@ class PredictionResult(BaseModel):
     out_multiomics: Optional[List[List[float]]] = None
     out_multiomics_probabilities: Optional[List[List[float]]] = None
     prediction: Optional[List[int]] = None
-        
+
 class JobStatus(str, Enum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"

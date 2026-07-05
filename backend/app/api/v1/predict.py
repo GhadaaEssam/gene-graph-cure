@@ -3,16 +3,18 @@ from app.schemas.predict import PredictionResult
 from app.services.gc_pge_service import GC_PGE_Service
 from pathlib import Path
 from typing import Optional
-import os
 import logging
 
-# Set up logging
-logger = logging.getLogger(__name__)
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from pydantic import ValidationError
 
-# Initialize router
+from app.schemas.predict import ModelKey, PredictionRequest, PredictionResult
+from app.services.model_service_registry import ModelServiceRegistry
+
+
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# Project root setup
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
 WEIGHTS_DIR = PROJECT_ROOT / "weights"
 
@@ -39,8 +41,14 @@ try:
 except Exception as e:
     raise RuntimeError(f"Failed to initialize GC_PGE_Service: {e}")
 
-@router.post("/predict", response_model=PredictionResult)
+@router.post(
+    "/predict",
+    response_model=PredictionResult,
+    response_model_exclude_none=True,
+)
 async def predict(
+    geo_features: UploadFile = File(...),
+    model: ModelKey = Form(...),
     include_graph: bool = Query(
         False,
         description="Return the full learned graph matrix. Leave false in Swagger for faster display."
@@ -53,12 +61,14 @@ async def predict(
     # homolog_edges: UploadFile = File(...),
     meth_features: Optional[UploadFile] = File(None),
     cnv_features: Optional[UploadFile] = File(None),
-    snv_features: Optional[UploadFile] = File(None)
+    snv_features: Optional[UploadFile] = File(None),
 ):
     """
-    Run GC-PGE model inference using multipart file uploads.
-    Upload only the required files for the base RNA model. Upload all three
-    optional omics files to switch to the multi-omics late-fusion model.
+    Run GC-PGE inference.
+
+    Use `model=breast_multiomics` with all four omics files:
+    `geo_features` for RNA plus `meth_features`, `cnv_features`, and `snv_features`.
+    Other models use only `geo_features`.
     """
     try:
         # We pass the file objects directly to the service
@@ -81,14 +91,23 @@ async def predict(
             include_graph=include_graph
         )
 
-        return result
+        service = model_registry.get_service(request.model.value)
+        logger.info("Running prediction with model: %s", request.model.value)
+        return await service.predict_from_files(
+            request.uploaded_files,
+            include_graph=request.include_graph,
+        )
 
-    except ValueError as e:
-        logger.warning(f"Validation error: {e}")
+    except (ValueError, ValidationError) as e:
+        logger.warning("Validation error: %s", e)
         raise HTTPException(status_code=422, detail=str(e))
 
+    except FileNotFoundError as e:
+        logger.error("Model configuration error: %s", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
     except RuntimeError as e:
-        logger.error(f"Inference failure: {e}")
+        logger.error("Inference failure: %s", e)
         raise HTTPException(status_code=500, detail=f"Model inference failed: {e}")
 
     except Exception as e:
