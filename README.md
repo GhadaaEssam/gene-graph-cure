@@ -21,8 +21,7 @@ The project is organized around two core capabilities:
 |-- scripts/rag/             PubMed scraping and vector database utilities
 |-- checks/                  Lightweight validation scripts
 |-- infra/docker/            Docker Compose and infrastructure helpers
-|-- requirements.txt         Root Python dependencies for ML/RAG workflows
-`-- main.py                  Legacy standalone ADRS FastAPI entry point
+`-- requirements.txt         Root Python dependencies for ML/RAG workflows
 ```
 
 ## Features
