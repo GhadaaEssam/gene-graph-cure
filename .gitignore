@@ -12,3 +12,5 @@ data/
 ipynb_checkpoints/
 backend/model_inputs/
 backend/weights/
+docs/
+model_inputs/

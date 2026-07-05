@@ -24,54 +24,12 @@ class CorePathway(BaseModel):
     weight: float
 
 class PredictionRequest(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    model: ModelKey
-    geo_features: Any
-    include_graph: bool = True
-    meth_features: Optional[Any] = None
-    cnv_features: Optional[Any] = None
-    snv_features: Optional[Any] = None
-
-    @property
-    def is_multiomics(self) -> bool:
-        return self.model == ModelKey.breast_multiomics
-
-    @property
-    def uploaded_files(self) -> dict[str, Any]:
-        return {
-            "geo_features": self.geo_features,
-            "meth_features": self.meth_features,
-            "cnv_features": self.cnv_features,
-            "snv_features": self.snv_features,
-        }
-
-    @model_validator(mode="after")
-    def validate_multiomics_files(self):
-        optional_omics = {
-            "meth_features": self.meth_features,
-            "cnv_features": self.cnv_features,
-            "snv_features": self.snv_features,
-        }
-        provided_optional = [
-            key for key, value in optional_omics.items() if value is not None
-        ]
-
-        if self.model == ModelKey.breast_multiomics:
-            missing_optional = [
-                key for key, value in optional_omics.items() if value is None
-            ]
-            if missing_optional:
-                raise ValueError(
-                    "breast_multiomics requires all omics files: "
-                    f"{', '.join(missing_optional)}"
-                )
-        elif provided_optional:
-            raise ValueError(
-                "Optional omics files are only supported with model=breast_multiomics"
-            )
-
-        return self
+    # node_features:  List[List[float]]
+    # ppi_edges:      List[List[int]]
+    # homolog_edges:  List[List[int]]
+    # anchor_genes: List[str]
+    geo_features:   List[List[float]]
+    cancer_type: CancerType 
 
 class PredictionResult(BaseModel):
     model_config = ConfigDict(extra='allow')
